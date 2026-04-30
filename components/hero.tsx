@@ -11,7 +11,7 @@ export function Hero() {
       </div>
       <p className="text-3xl lg:text-4xl !leading-tight mx-auto max-w-2xl text-center">
         A digital queue and reservation system for schools and offices. Reserve
-        a slot, monitor your position on screen, and get served faster — no more
+        a slot, monitor your position on screen, and get served faster no more
         long physical lines.
       </p>
       <p className="text-xl text-muted-foreground italic max-w-xl text-center">
