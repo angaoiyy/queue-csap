@@ -17,7 +17,8 @@ const InfoIcon = ({ type }: { type: InfoIconType }) => {
   return <div className="mr-2 flex-shrink-0">{icons[type]}</div>;
 };
 
-interface HeroSectionProps extends React.HTMLAttributes<HTMLDivElement> {
+interface HeroSectionProps
+  extends Omit<React.ComponentPropsWithoutRef<typeof motion.section>, "title"> {
   logo?: {
     url: string;
     alt: string;
@@ -38,7 +39,7 @@ interface HeroSectionProps extends React.HTMLAttributes<HTMLDivElement> {
   };
 }
 
-const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
+const HeroSection = React.forwardRef<HTMLElement, HeroSectionProps>(
   (
     {
       className,
@@ -71,7 +72,6 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
         opacity: 1,
         transition: {
           duration: 0.5,
-          ease: "easeOut",
         },
       },
     };
@@ -158,7 +158,7 @@ const HeroSection = React.forwardRef<HTMLDivElement, HeroSectionProps>(
           }}
           initial={{ clipPath: "polygon(100% 0, 100% 0, 100% 100%, 100% 100%)" }}
           animate={{ clipPath: "polygon(25% 0, 100% 0, 100% 100%, 0% 100%)" }}
-          transition={{ duration: 1.2, ease: "circOut" }}
+          transition={{ duration: 1.2 }}
         />
       </motion.section>
     );

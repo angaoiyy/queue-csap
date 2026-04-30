@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityLogsTable } from "@/components/activity-logs-table";
+import { Suspense } from "react";
 
-export default async function ActivityLogsPage() {
+async function ActivityLogsContent() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
@@ -20,5 +21,13 @@ export default async function ActivityLogsPage() {
       </div>
       <ActivityLogsTable />
     </div>
+  );
+}
+
+export default function ActivityLogsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center p-12">Loading...</div>}>
+      <ActivityLogsContent />
+    </Suspense>
   );
 }
