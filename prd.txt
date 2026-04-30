@@ -1,0 +1,399 @@
+Here is a **clear Product Requirements Document (PRD)** for your vibe-coded app **ScreenBased**. I structured it like a real startup PRD so it can be used by developers, designers, or even in a hackathon.
+
+---
+
+# Product Requirements Document (PRD)
+
+## Product Name
+
+**ScreenBased**
+
+## 1. Product Overview
+
+**ScreenBased** is a **digital queue and reservation management system** designed for environments where people line up for services (e.g., **school accounting, registrar, clinics, government offices**).
+
+Instead of physically lining up, users can **reserve a queue slot digitally and monitor their position through a screen display system**.
+
+The goal is to **reduce waiting time, eliminate long physical lines, and improve service efficiency**.
+
+---
+
+# 2. Problem Statement
+
+In many schools and offices:
+
+* Students line up physically for **accounting payments, document requests, or verification**
+* Long queues cause **crowding and wasted time**
+* Staff struggle to **manage and monitor queue flow**
+* Students often **don’t know how long they will wait**
+
+**Current Situation Example (School Accounting):**
+
+1. Students arrive
+2. They form a long line
+3. No clear queue tracking
+4. Some people cut lines
+5. Staff manually calls the next person
+
+This creates **frustration and inefficiency**.
+
+---
+
+# 3. Product Vision
+
+To create a **smart queue management system that organizes service flow through digital screens and online reservations**.
+
+Users should be able to:
+
+* Reserve a slot
+* See their queue number
+* Monitor progress on a display screen
+* Arrive only when their number is close
+
+---
+
+# 4. Target Users
+
+### Primary Users
+
+Students or customers who want to reserve a queue.
+
+### Secondary Users
+
+Office staff (accounting personnel).
+
+### Admin Users
+
+Administrators who manage queue flow and services.
+
+---
+
+# 5. Core Features
+
+## 5.1 Queue Reservation
+
+Users can reserve a queue slot before arriving.
+
+**Capabilities:**
+
+* Select service (Accounting, Registrar, etc.)
+* Generate queue number
+* Show estimated waiting time
+
+---
+
+## 5.2 Live Queue Tracking
+
+Users can monitor the queue progress.
+
+**Features:**
+
+* Current number being served
+* Numbers waiting
+* Estimated time
+
+Example:
+
+```
+Now Serving: A023
+Next: A024
+Your Number: A030
+Estimated Wait: 15 minutes
+```
+
+---
+
+## 5.3 Display Screen System
+
+A **public screen displays queue progress**.
+
+This can be placed in:
+
+* Accounting offices
+* Waiting areas
+* School lobbies
+
+The screen shows:
+
+* Current serving number
+* Next numbers
+* Announcements
+
+---
+
+## 5.4 Staff Queue Controls
+
+Staff can control queue flow.
+
+Actions include:
+
+* Call next number
+* Skip number
+* Mark as completed
+* Pause queue
+
+---
+
+## 5.5 Service Categories
+
+Multiple service queues can exist simultaneously.
+
+Example:
+
+| Service       | Prefix |
+| ------------- | ------ |
+| Accounting    | A      |
+| Registrar     | R      |
+| ID Processing | I      |
+
+Queue numbers look like:
+
+* A021
+* R015
+* I008
+
+---
+
+## 5.6 Notifications
+
+Users receive updates when their turn is near.
+
+Possible channels:
+
+* Web notifications
+* SMS (future)
+* Email (future)
+
+Example:
+
+> “Your queue number A030 is now approaching. Please proceed to Accounting.”
+
+---
+
+# 6. User Flow
+
+## Student Flow
+
+1. Open ScreenBased
+2. Select service
+3. Reserve queue
+4. Receive queue number
+5. Monitor queue progress
+6. Go to counter when called
+
+---
+
+## Staff Flow
+
+1. Login to dashboard
+2. Select service queue
+3. Call next number
+4. Mark completed
+5. Manage queue
+
+---
+
+## Display Screen Flow
+
+1. System shows active queues
+2. Automatically updates when staff calls next
+3. Shows current number
+
+---
+
+# 7. System Components
+
+### 1. User Interface
+
+For students to reserve and track queue.
+
+### 2. Admin Dashboard
+
+For staff to manage queues.
+
+### 3. Display Screen
+
+Public screen showing queue numbers.
+
+### 4. Backend Queue Engine
+
+Handles queue logic:
+
+* queue generation
+* next number
+* waiting list
+* service time estimation
+
+---
+
+# 8. Example UI Screens
+
+### Screen 1 — Service Selection
+
+```
+Select Service
+
+[ Accounting ]
+[ Registrar ]
+[ ID Processing ]
+```
+
+---
+
+### Screen 2 — Queue Confirmation
+
+```
+Queue Reserved
+
+Your Number: A032
+Now Serving: A021
+
+Estimated Wait: 18 minutes
+```
+
+---
+
+### Screen 3 — Public Display
+
+```
+SCREENBASED
+
+Accounting
+Now Serving: A021
+Next: A022
+
+Registrar
+Now Serving: R015
+Next: R016
+```
+
+---
+
+# 9. Technical Requirements
+
+### Frontend
+
+Possible frameworks:
+
+* React
+* Next.js
+* Vue
+
+### Backend
+
+Options:
+
+* Node.js (Express)
+* Django
+* Laravel
+
+### Database
+
+* PostgreSQL
+* Firebase
+* Supabase
+
+### Real-Time Updates
+
+Needed for live queue updates:
+
+* WebSockets
+* Firebase realtime
+* Supabase realtime
+
+---
+
+# 10. Non-Functional Requirements
+
+### Performance
+
+Queue updates must appear **in real time (<1 second delay)**.
+
+### Reliability
+
+System should handle **multiple queues simultaneously**.
+
+### Security
+
+Admin access must require authentication.
+
+### Scalability
+
+Must support:
+
+* multiple services
+* multiple counters
+* hundreds of users
+
+---
+
+# 11. Success Metrics
+
+Success of ScreenBased will be measured by:
+
+* Reduced waiting lines
+* Faster queue processing
+* User adoption rate
+* Average wait time reduction
+
+Example metrics:
+
+| Metric            | Target          |
+| ----------------- | --------------- |
+| Average wait time | ↓ 30%           |
+| User adoption     | 60% of students |
+| Queue efficiency  | +40%            |
+
+---
+
+# 12. Future Features
+
+### Mobile App
+
+Dedicated Android/iOS version.
+
+### QR Code Check-In
+
+Students scan QR to confirm arrival.
+
+### AI Wait Time Prediction
+
+Predict wait times based on historical data.
+
+### Analytics Dashboard
+
+Admin insights:
+
+* peak hours
+* average service time
+* queue statistics
+
+---
+
+# 13. MVP Scope (For Hackathon or First Version)
+
+Focus only on:
+
+✅ Queue number generation
+✅ Staff "Call Next" system
+✅ Live screen display
+✅ Basic reservation
+
+Exclude for now:
+
+❌ SMS notifications
+❌ Mobile apps
+❌ Analytics
+
+---
+
+# 14. Product Tagline
+
+**ScreenBased — Smart Queues, Zero Lines.**
+
+or
+
+**“Reserve. Wait Smarter. Get Served Faster.”**
+
+---
+

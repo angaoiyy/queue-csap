@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSAP theme - matches Reserve Queue page (light grey bg, maroon, mustard)
+   Primary: #70262B | Secondary: #DFA93D | Background: #F8F8F8 | Card: #FFFFFF */
+
+@layer base {
+  :root {
+    --background: 0 0% 97.3%; /* #F8F8F8 - light grey page background */
+    --foreground: 0 0% 20%; /* #333333 - labels, descriptive text */
+    --card: 0 0% 100%; /* #FFFFFF - form card background */
+    --card-foreground: 0 0% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 20%;
+    --primary: 356 45% 28%; /* #70262B - dark maroon header/buttons */
+    --primary-foreground: 0 0% 100%; /* white on maroon */
+    --secondary: 39 74% 55%; /* #DFA93D - golden mustard (View Queue Status) */
+    --secondary-foreground: 0 0% 0%; /* black text on mustard */
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%; /* secondary text, links */
+    --accent: 200 90% 95%; /* #E0F2F7 - light blue info box */
+    --accent-foreground: 207 90% 54%; /* #2196F3 - info text */
+    --destructive: 354 70% 54%; /* #DC3545 - error */
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 80%; /* #CCCCCC */
+    --input: 0 0% 80%;
+    --ring: 0 100% 27%; /* maroon focus ring to match primary */
+    --chart-1: 0 100% 27%; /* maroon */
+    --chart-2: 45 100% 50%; /* gold */
+    --chart-3: 120 100% 25%; /* green */
+    --chart-4: 0 0% 50%; /* grey */
+    --chart-5: 0 100% 40%; /* lighter maroon */
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
