@@ -51,6 +51,9 @@ export function UserNavDropdown({ email }: Props) {
         <DropdownMenuItem asChild>
           <Link href="/dashboard/activity-logs">Activity Logs</Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/dashboard/settings">Settings</Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={logout}>Logout</DropdownMenuItem>
       </DropdownMenuContent>

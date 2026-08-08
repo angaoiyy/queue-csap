@@ -106,14 +106,14 @@ export function ActivityLogsTable() {
         async () => {
           await loadLogs();
           await loadAnalytics();
-        }
+        },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "reservations" },
         async () => {
           await loadAnalytics();
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -122,7 +122,7 @@ export function ActivityLogsTable() {
           await loadWindows();
           await loadAnalytics();
           await loadLogs();
-        }
+        },
       )
       .subscribe();
     return () => {
@@ -179,17 +179,26 @@ export function ActivityLogsTable() {
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-lg border p-4">
           <p className="text-xs text-muted-foreground">Total Queues Created</p>
-          <p className="text-2xl font-semibold">{analytics?.totalQueueCreated ?? 0}</p>
+          <p className="text-2xl font-semibold">
+            {analytics?.totalQueueCreated ?? 0}
+          </p>
         </div>
         <div className="rounded-lg border p-4">
           <p className="text-xs text-muted-foreground">Total Processed</p>
-          <p className="text-2xl font-semibold">{analytics?.totalProcessed ?? 0}</p>
+          <p className="text-2xl font-semibold">
+            {analytics?.totalProcessed ?? 0}
+          </p>
         </div>
         <div className="rounded-lg border p-4">
           <p className="text-xs text-muted-foreground">Live Queue</p>
           <p className="text-sm">
-            Waiting: <span className="font-semibold">{analytics?.liveWaiting ?? 0}</span> •
-            Serving: <span className="font-semibold"> {analytics?.liveServing ?? 0}</span>
+            Waiting:{" "}
+            <span className="font-semibold">{analytics?.liveWaiting ?? 0}</span>{" "}
+            • Serving:{" "}
+            <span className="font-semibold">
+              {" "}
+              {analytics?.liveServing ?? 0}
+            </span>
           </p>
         </div>
       </div>
@@ -199,11 +208,14 @@ export function ActivityLogsTable() {
           <p className="mb-2 text-sm font-medium">Actions by Type</p>
           <div className="space-y-1 text-sm">
             {(analytics?.actionsByType ?? []).length === 0 ? (
-              <p className="text-muted-foreground">No actions in selected range</p>
+              <p className="text-muted-foreground">
+                No actions in selected range
+              </p>
             ) : (
               (analytics?.actionsByType ?? []).map((item) => (
                 <p key={item.action}>
-                  {item.action}: <span className="font-semibold">{item.count}</span>
+                  {item.action}:{" "}
+                  <span className="font-semibold">{item.count}</span>
                 </p>
               ))
             )}
@@ -213,11 +225,14 @@ export function ActivityLogsTable() {
           <p className="mb-2 text-sm font-medium">Processed by Window</p>
           <div className="space-y-1 text-sm">
             {(analytics?.processedByWindow ?? []).length === 0 ? (
-              <p className="text-muted-foreground">No processed items in selected range</p>
+              <p className="text-muted-foreground">
+                No processed items in selected range
+              </p>
             ) : (
               (analytics?.processedByWindow ?? []).map((item) => (
                 <p key={item.windowName}>
-                  {item.windowName}: <span className="font-semibold">{item.count}</span>
+                  {item.windowName}:{" "}
+                  <span className="font-semibold">{item.count}</span>
                 </p>
               ))
             )}
@@ -226,8 +241,16 @@ export function ActivityLogsTable() {
       </div>
 
       <div className="grid gap-2 md:grid-cols-3">
-        <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-        <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        <Input
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+        />
+        <Input
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+        />
         <Select value={windowFilter} onValueChange={setWindowFilter}>
           <SelectTrigger>
             <SelectValue placeholder="Filter window" />
@@ -255,10 +278,14 @@ export function ActivityLogsTable() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All actions</SelectItem>
-            <SelectItem value="reservation_created">Reservation created</SelectItem>
+            <SelectItem value="reservation_created">
+              Reservation created
+            </SelectItem>
             <SelectItem value="call_next">Call next</SelectItem>
             <SelectItem value="skip_ticket">Skip ticket</SelectItem>
-            <SelectItem value="window_count_changed">Window count changed</SelectItem>
+            <SelectItem value="window_count_changed">
+              Window count changed
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -269,14 +296,17 @@ export function ActivityLogsTable() {
             <tr className="border-b bg-muted/50">
               <th className="px-4 py-3 text-left font-medium">Time</th>
               <th className="px-4 py-3 text-left font-medium">Action</th>
-              <th className="px-4 py-3 text-left font-medium">Actor</th>
+              <th className="px-4 py-3 text-left font-medium">Cashier</th>
               <th className="px-4 py-3 text-left font-medium">Details</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={4}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
                   No activity logs found
                 </td>
               </tr>

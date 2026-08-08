@@ -1,22 +1,39 @@
-'use client';
+import { Suspense } from "react";
 import { ReservationForm } from "@/components/reservation-form";
-import Link from "next/link";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { ReserveLogoLink } from "@/components/reserve-logo-link";
+import { listSettingsItems } from "@/lib/actions/settings";
+
+async function ReserveContent() {
+  const [departments, degreePrograms, termsSchoolYear, inquiryTypes, purposeOptions] =
+    await Promise.all([
+      listSettingsItems("departments", { activeOnly: true }),
+      listSettingsItems("degree_programs", { activeOnly: true }),
+      listSettingsItems("school_years", { activeOnly: true }),
+      listSettingsItems("inquiry_types", { activeOnly: true }),
+      listSettingsItems("purpose_of_request_options", { activeOnly: true }),
+    ]);
+
+  return (
+    <ReservationForm
+      departments={departments}
+      degreePrograms={degreePrograms}
+      termsSchoolYear={termsSchoolYear}
+      inquiryTypes={inquiryTypes}
+      purposeOptions={purposeOptions}
+    />
+  );
+}
 
 export default function ReservePage() {
-  const router = useRouter();
-    return (
+  return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
       <div className="mb-8 text-center flex items-center gap-2 justify-center flex-col">
-      <Image onClick={() => router.push("/")} className="cursor-pointer object-contain" src="/csap.png" alt="CSAP Logo" width={100} height={100} />
-        
+        <ReserveLogoLink />
       </div>
-      <ReservationForm />
-      <div className="mt-8 flex gap-4 text-sm">
-       
-       
-      </div>
+      <Suspense fallback={<div className="p-12">Loading...</div>}>
+        <ReserveContent />
+      </Suspense>
+      <div className="mt-8 flex gap-4 text-sm"></div>
     </div>
   );
 }

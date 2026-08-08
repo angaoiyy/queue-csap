@@ -41,6 +41,7 @@ export function AdminQueuePanel() {
       .select("*")
       .eq("queue_date", todayQueueDate)
       .in("status", ["waiting", "serving"])
+      .order("is_priority", { ascending: false })
       .order("created_at", { ascending: true });
     if (queryError) {
       setError(queryError.message);
@@ -100,10 +101,14 @@ export function AdminQueuePanel() {
               if (nextRow.status === "waiting" || nextRow.status === "serving") {
                 next.push(nextRow);
               }
-              return next.sort(
-                (a, b) =>
+              return next.sort((a, b) => {
+                if (a.is_priority !== b.is_priority) {
+                  return a.is_priority ? -1 : 1;
+                }
+                return (
                   new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-              );
+                );
+              });
             });
             return;
           }
@@ -259,13 +264,14 @@ export function AdminQueuePanel() {
               <th className="px-4 py-3 text-left font-medium">Inquiry Type</th>
               <th className="px-4 py-3 text-left font-medium">Window</th>
               <th className="px-4 py-3 text-left font-medium">Term</th>
+              <th className="px-4 py-3 text-left font-medium">Priority</th>
               <th className="px-4 py-3 text-left font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {paginatedQueue.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                   No reservations found
                 </td>
               </tr>
@@ -283,6 +289,13 @@ export function AdminQueuePanel() {
                     {windows.find((window) => window.id === r.window_id)?.name ?? "Unknown"}
                   </td>
                   <td className="px-4 py-3">{r.term_school_year}</td>
+                  <td className="px-4 py-3">
+                    {r.priority_type ? (
+                      <Badge variant="outline">{r.priority_type}</Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <Badge
                       variant={

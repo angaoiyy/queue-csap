@@ -2,7 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
-import { DEPARTMENTS, INQUIRY_TYPES } from "@/lib/constants";
+import { PRIORITY_TYPES } from "@/lib/constants";
+import { listSettingsItems } from "@/lib/actions/settings";
 
 export type Reservation = {
   id: string;
@@ -12,6 +13,9 @@ export type Reservation = {
   degree_program: string | null;
   term_school_year: string;
   inquiry_type: string;
+  purpose_of_request: string | null;
+  priority_type: string | null;
+  is_priority: boolean;
   queue_number: string;
   position: number;
   status: string;
@@ -42,6 +46,8 @@ export type CreateReservationInput = {
   degree_program: string;
   term_school_year: string;
   inquiry_type: string;
+  purpose_of_request?: string;
+  priority_type?: string;
 };
 
 export type CreateReservationResult =
@@ -58,22 +64,39 @@ export async function createReservation(
     return { success: false, error: "No active windows configured for today" };
   }
 
-  const inquiryTypeConfig = INQUIRY_TYPES.find(
-    (type) => type.value === input.inquiry_type
+  const [inquiryTypes, departments] = await Promise.all([
+    listSettingsItems("inquiry_types", { activeOnly: true }),
+    listSettingsItems("departments", { activeOnly: true }),
+  ]);
+
+  const inquiryTypeConfig = inquiryTypes.find(
+    (type) => type.label === input.inquiry_type
   );
   if (!inquiryTypeConfig) {
     return { success: false, error: "Invalid inquiry type" };
   }
 
-  if (!DEPARTMENTS.includes(input.department as (typeof DEPARTMENTS)[number])) {
+  const departmentConfig = departments.find(
+    (department) => department.label === input.department
+  );
+  if (!departmentConfig) {
     return { success: false, error: "Invalid department" };
   }
 
-  if (
-    input.department === "Baccalaureate-College" &&
-    !input.degree_program.trim()
-  ) {
+  if (departmentConfig.requires_degree_program && !input.degree_program.trim()) {
     return { success: false, error: "Degree program is required" };
+  }
+
+  if (inquiryTypeConfig.requires_purpose && !input.purpose_of_request?.trim()) {
+    return { success: false, error: "Purpose of request is required" };
+  }
+
+  const priorityType = input.priority_type?.trim() || null;
+  if (
+    priorityType &&
+    !PRIORITY_TYPES.some((type) => type.value === priorityType)
+  ) {
+    return { success: false, error: "Invalid priority type" };
   }
 
   const { count, error: countError } = await supabase
@@ -97,12 +120,15 @@ export async function createReservation(
       student_name: input.student_name,
       student_id: input.student_id,
       department: input.department,
-      degree_program:
-        input.department === "Baccalaureate-College"
-          ? input.degree_program
-          : null,
+      degree_program: departmentConfig.requires_degree_program
+        ? input.degree_program
+        : null,
       term_school_year: input.term_school_year,
       inquiry_type: input.inquiry_type,
+      purpose_of_request: inquiryTypeConfig.requires_purpose
+        ? input.purpose_of_request?.trim() || null
+        : null,
+      priority_type: priorityType,
       queue_number,
       position,
       status: "waiting",
@@ -128,6 +154,7 @@ export async function createReservation(
     metadata: {
       queue_number: (data as Reservation).queue_number,
       inquiry_type: input.inquiry_type,
+      priority_type: priorityType,
       window_id: assignedWindow.id,
       window_name: assignedWindow.name,
       student_id: input.student_id,
@@ -144,6 +171,55 @@ export async function createReservation(
   };
 }
 
+export type StudentLookupResult = {
+  student_name: string;
+  student_id: string;
+  department: string;
+  degree_program: string | null;
+} | null;
+
+export async function lookupStudent(query: string): Promise<StudentLookupResult> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return null;
+
+  const escaped = escapeForIlike(trimmed);
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("student_name, student_id, department, degree_program, created_at")
+    .or(`student_id.ilike.%${escaped}%,student_name.ilike.%${escaped}%`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const [departments, degreePrograms] = await Promise.all([
+    listSettingsItems("departments", { activeOnly: true }),
+    listSettingsItems("degree_programs", { activeOnly: true }),
+  ]);
+
+  const department = departments.some((d) => d.label === data.department)
+    ? data.department
+    : null;
+  const degree_program = degreePrograms.some((d) => d.label === data.degree_program)
+    ? data.degree_program
+    : null;
+
+  if (!department) return null;
+
+  return {
+    student_name: data.student_name,
+    student_id: data.student_id,
+    department,
+    degree_program,
+  };
+}
+
+function escapeForIlike(value: string): string {
+  return value.replace(/[%_,]/g, (char) => `\\${char}`);
+}
+
 export async function getActiveQueue() {
   noStore();
   const supabase = await createClient();
@@ -153,6 +229,7 @@ export async function getActiveQueue() {
     .select("*")
     .eq("queue_date", manilaToday)
     .in("status", ["waiting", "serving"])
+    .order("is_priority", { ascending: false })
     .order("created_at", { ascending: true });
 
   if (error) throw error;
