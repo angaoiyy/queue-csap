@@ -13,6 +13,7 @@ const LOCATION = "Guinsay, Danao City, Philippines";
 
 function useClock() {
   const [time, setTime] = useState("");
+  const [date, setDate] = useState("");
   useEffect(() => {
     const fmt = () => {
       const now = new Date();
@@ -24,18 +25,26 @@ function useClock() {
           hour12: true,
         }),
       );
+      setDate(
+        now.toLocaleDateString("en-PH", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+      );
     };
     fmt();
     const id = setInterval(fmt, 1000);
     return () => clearInterval(id);
   }, []);
-  return time;
+  return { time, date };
 }
 
 export default function DisplayPage() {
   const [data, setData] = useState<DisplayData | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
-  const time = useClock();
+  const { time, date } = useClock();
   const lastServingRef = useRef<Map<string, string>>(new Map());
   const isFirstLoadRef = useRef(true);
 
@@ -170,7 +179,7 @@ export default function DisplayPage() {
         </div>
         <div className="text-right">
           <p className="text-3xl font-bold text-white">{time}</p>
-          <p className="text-sm text-white/90">Current Time</p>
+          <p className="text-sm text-white/90">{date}</p>
         </div>
       </header>
 
@@ -203,11 +212,11 @@ export default function DisplayPage() {
                       {windowColumn.windowName}
                     </p>
 
-                    <div className="flex flex-col items-center overflow-hidden rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-8">
+                    <div className="flex flex-col items-center overflow-hidden rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-8 [container-type:inline-size]">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-secondary/90">
                         Now Serving
                       </p>
-                      <p className="w-full text-center text-[clamp(1.75rem,4vw,4.5rem)] font-black leading-none tracking-wide text-white">
+                      <p className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(1.5rem,18cqw,4.5rem)] font-black leading-none tracking-wide text-white">
                         {windowColumn.queueNumber ?? "— —"}
                       </p>
                       <p className="mt-3 truncate text-sm text-white/70">
