@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { PRIORITY_TYPES, MINUTES_PER_SLOT } from "@/lib/constants";
 import { listSettingsItems } from "@/lib/actions/settings";
-import { printReservationTicket } from "@/lib/printer/ticket";
+import { buildTicketEscPosBase64 } from "@/lib/printer/ticket";
 import { getDisplaySettings } from "@/lib/actions/display-settings";
 
 export type Reservation = {
@@ -53,7 +53,7 @@ export type CreateReservationInput = {
 };
 
 export type CreateReservationResult =
-  | { success: true; reservation: Reservation; printError?: string }
+  | { success: true; reservation: Reservation; ticketEscPos: string }
   | { success: false; error: string };
 
 export async function createReservation(
@@ -169,30 +169,22 @@ export async function createReservation(
     window_name: assignedWindow.name,
   };
 
-  let printError: string | undefined;
-  try {
-    const printResult = await printReservationTicket({
-      queueNumber: reservation.queue_number,
-      studentName: reservation.student_name,
-      studentId: reservation.student_id,
-      department: reservation.department,
-      inquiryType: reservation.inquiry_type,
-      windowName: assignedWindow.name,
-      position: reservation.position,
-      estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
-      createdAt: new Date(reservation.created_at),
-    });
-    if (!printResult.success) {
-      printError = printResult.error;
-    }
-  } catch (err) {
-    printError = err instanceof Error ? err.message : "Unknown printer error";
-  }
+  const ticketEscPos = buildTicketEscPosBase64({
+    queueNumber: reservation.queue_number,
+    studentName: reservation.student_name,
+    studentId: reservation.student_id,
+    department: reservation.department,
+    inquiryType: reservation.inquiry_type,
+    windowName: assignedWindow.name,
+    position: reservation.position,
+    estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
+    createdAt: new Date(reservation.created_at),
+  });
 
   return {
     success: true,
     reservation,
-    ...(printError ? { printError } : {}),
+    ticketEscPos,
   };
 }
 

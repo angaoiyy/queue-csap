@@ -123,8 +123,8 @@ export function ReservationForm({
           position: String(r.position),
           wait: String(estimatedMinutes),
           date: r.created_at,
-          ...(result.printError ? { printError: result.printError } : {}),
         });
+        sessionStorage.setItem("screenb_ticket_escpos", result.ticketEscPos);
         setFormData({
           student_name: "",
           student_id: "",

@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PrintTicketButton } from "@/components/print-ticket-button";
 
 type Props = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -24,7 +25,6 @@ async function ConfirmationContent({ searchParams }: Props) {
   const position = (params.position as string) ?? "0";
   const wait = (params.wait as string) ?? "0";
   const date = (params.date as string) ?? "";
-  const printError = (params.printError as string) ?? "";
 
   if (!queue) {
     return (
@@ -96,12 +96,7 @@ async function ConfirmationContent({ searchParams }: Props) {
               </p>
             )}
           </div>
-          {printError && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-              Your queue number is confirmed, but the ticket could not be
-              printed. Please show this screen to staff.
-            </div>
-          )}
+          <PrintTicketButton />
           <div className="flex flex-col gap-2">
             <Button variant="default" asChild>
               <Link href="/reserve">Reserve Another</Link>

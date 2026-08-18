@@ -1,23 +1,9 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { writeFile, unlink } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import {
   printer as ThermalPrinter,
   types as PrinterTypes,
 } from "node-thermal-printer";
-
-const execFileAsync = promisify(execFile);
-
-const RAW_PRINT_SCRIPT = path.join(
-  process.cwd(),
-  "lib",
-  "printer",
-  "raw-print.ps1",
-);
-const DEFAULT_PRINTER_NAME = "XP-58 (copy 1)";
 
 export type TicketData = {
   queueNumber: string;
@@ -30,8 +16,6 @@ export type TicketData = {
   estimatedMinutes: number;
   createdAt: Date;
 };
-
-export type PrintResult = { success: true } | { success: false; error: string };
 
 function buildTicketBuffer(ticket: TicketData): Buffer {
   const printer = new ThermalPrinter({
@@ -79,41 +63,11 @@ function buildTicketBuffer(ticket: TicketData): Buffer {
   return printer.getBuffer();
 }
 
-export async function printReservationTicket(
-  ticket: TicketData,
-): Promise<PrintResult> {
-  if (process.platform !== "win32") {
-    return {
-      success: false,
-      error: "Ticket printing is only supported on Windows",
-    };
-  }
-
-  const printerName =
-    process.env.THERMAL_PRINTER_NAME?.trim() || DEFAULT_PRINTER_NAME;
-  const tmpFile = path.join(os.tmpdir(), `screenb-ticket-${randomUUID()}.bin`);
-
-  try {
-    const buffer = buildTicketBuffer(ticket);
-    await writeFile(tmpFile, buffer);
-
-    await execFileAsync("powershell.exe", [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      RAW_PRINT_SCRIPT,
-      "-PrinterName",
-      printerName,
-      "-FilePath",
-      tmpFile,
-    ]);
-
-    return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { success: false, error: message };
-  } finally {
-    await unlink(tmpFile).catch(() => {});
-  }
+/**
+ * Builds the ESC/POS ticket and returns it base64-encoded so it can be sent
+ * to the browser, which forwards it to a locally running QZ Tray instance
+ * for printing. The server never talks to the printer directly.
+ */
+export function buildTicketEscPosBase64(ticket: TicketData): string {
+  return buildTicketBuffer(ticket).toString("base64");
 }
