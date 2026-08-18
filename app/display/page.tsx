@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getDisplayData, type DisplayData } from "@/lib/actions/reservation";
+import { parseVideoEmbedUrl } from "@/lib/video";
+import { speakNowServing, unlockSpeech } from "@/lib/speech";
 import Image from "next/image";
+
+const AUDIO_ENABLED_KEY = "display-audio-enabled";
 const INSTITUTION = "Colegio de San Antonio de Padua";
 const LOCATION = "Guinsay, Danao City, Philippines";
 
@@ -18,7 +22,7 @@ function useClock() {
           minute: "2-digit",
           second: "2-digit",
           hour12: true,
-        })
+        }),
       );
     };
     fmt();
@@ -30,7 +34,22 @@ function useClock() {
 
 export default function DisplayPage() {
   const [data, setData] = useState<DisplayData | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(false);
   const time = useClock();
+  const lastServingRef = useRef<Map<string, string>>(new Map());
+  const isFirstLoadRef = useRef(true);
+
+  useEffect(() => {
+    if (sessionStorage.getItem(AUDIO_ENABLED_KEY) === "true") {
+      setAudioEnabled(true);
+    }
+  }, []);
+
+  const enableAudio = () => {
+    unlockSpeech();
+    sessionStorage.setItem(AUDIO_ENABLED_KEY, "true");
+    setAudioEnabled(true);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -50,7 +69,15 @@ export default function DisplayPage() {
         async () => {
           const d = await getDisplayData();
           setData(d);
-        }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "display_settings" },
+        async () => {
+          const d = await getDisplayData();
+          setData(d);
+        },
       )
       .subscribe();
 
@@ -58,6 +85,30 @@ export default function DisplayPage() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (!data) return;
+
+    const lastServing = lastServingRef.current;
+
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false;
+      for (const w of data.nowServingByWindow) {
+        if (w.queueNumber) lastServing.set(w.windowId, w.queueNumber);
+      }
+      return;
+    }
+
+    for (const w of data.nowServingByWindow) {
+      const previous = lastServing.get(w.windowId);
+      if (w.queueNumber && w.queueNumber !== previous) {
+        if (audioEnabled && data.audioEnabled) speakNowServing(w.queueNumber, w.windowName);
+        lastServing.set(w.windowId, w.queueNumber);
+      } else if (!w.queueNumber) {
+        lastServing.delete(w.windowId);
+      }
+    }
+  }, [data, audioEnabled]);
 
   if (!data) {
     return (
@@ -68,23 +119,51 @@ export default function DisplayPage() {
   }
 
   const nowServingByWindow = data.nowServingByWindow;
-  const nextUp = data.next.slice(0, 5);
+  const videoEmbedUrl = data.videoUrl
+    ? parseVideoEmbedUrl(data.videoUrl)
+    : null;
+  const showVideoSection = data.videoEnabled;
+  const priorityNext = data.priorityNext;
   const assignedTickets = data.assignedTickets;
   const ticketsByWindow = nowServingByWindow.map((windowData) => ({
     windowId: windowData.windowId,
     windowName: windowData.windowName,
-    tickets: assignedTickets.filter((ticket) => ticket.windowName === windowData.windowName),
+    queueNumber: windowData.queueNumber,
+    inquiryType: windowData.inquiryType,
+    waitingTickets: assignedTickets.filter(
+      (ticket) =>
+        ticket.windowName === windowData.windowName &&
+        ticket.status === "waiting",
+    ),
   }));
 
   return (
     <div className="flex min-h-screen flex-col bg-[hsl(356,45%,15%)]">
+      {!audioEnabled && data.audioEnabled && (
+        <button
+          type="button"
+          onClick={enableAudio}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 text-white backdrop-blur-sm"
+        >
+          <p className="text-2xl font-bold">Tap to enable sound</p>
+          <p className="text-sm text-white/70">
+            Numbers called will be announced aloud
+          </p>
+        </button>
+      )}
       {/* Header */}
       <header className="flex items-center justify-between bg-primary px-8 py-4">
         <div className="flex items-center gap-4">
-         <Image src="/csap.png" alt="CSAP Logo" width={56} height={56} className="object-contain" />
+          <Image
+            src="/csap.png"
+            alt="CSAP Logo"
+            width={56}
+            height={56}
+            className="object-contain"
+          />
           <div>
             <h1 className="text-2xl font-bold text-white">
-              CSAP 
+              CSAP Queue Management System
             </h1>
             <p className="text-sm text-white/90">{INSTITUTION}</p>
           </div>
@@ -96,75 +175,64 @@ export default function DisplayPage() {
       </header>
 
       {/* Main content */}
-      <main className="flex flex-1 flex-col items-center justify-center gap-12 px-8 py-12">
-        <div className="grid w-full max-w-5xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {nowServingByWindow.map((windowData) => (
-            <div
-              key={windowData.windowId}
-              className="flex flex-col items-center justify-center rounded-2xl border border-white/20 bg-white/5 px-8 py-10 backdrop-blur-sm"
-            >
-              <p className="mb-1 text-sm font-semibold uppercase tracking-wider text-white/80">
-                {windowData.windowName}
-              </p>
-              <p className="mb-1 text-xs uppercase tracking-widest text-white/60">
-                Now Serving
-              </p>
-              <p className="text-5xl font-bold tracking-widest text-white">
-                {windowData.queueNumber ?? "— —"}
-              </p>
-              <p className="mt-2 text-xs text-white/60">
-                {windowData.inquiryType ?? "No active ticket"}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="w-full max-w-5xl">
-          <div className="rounded-t-xl bg-primary px-6 py-3">
-            <h2 className="text-center text-lg font-bold text-white">
-              Ticket to Window
+      <main className="flex flex-1 gap-8 px-10 py-8">
+        {/* Windows */}
+        <section className="flex flex-1 flex-col">
+          <div className="rounded-t-2xl bg-primary px-8 py-4">
+            <h2 className="text-xl font-bold tracking-wide text-white">
+              Live Queue
             </h2>
           </div>
-          <div className="rounded-b-xl border border-t-0 border-white/20 bg-white/5 px-8 py-6 backdrop-blur-sm">
+          <div className="flex flex-1 rounded-b-2xl border border-t-0 border-white/15 bg-white/5 p-6 backdrop-blur-sm">
             {ticketsByWindow.length > 0 ? (
               <div
-                className="grid gap-4"
+                className="grid flex-1 gap-6"
                 style={{
                   gridTemplateColumns: `repeat(${Math.max(
                     1,
-                    ticketsByWindow.length
+                    ticketsByWindow.length,
                   )}, minmax(0, 1fr))`,
                 }}
               >
                 {ticketsByWindow.map((windowColumn) => (
                   <div
                     key={windowColumn.windowId}
-                    className="rounded-lg border border-white/20 bg-black/10 p-3"
+                    className="flex flex-col rounded-xl border border-white/15 bg-black/15 p-5"
                   >
-                    <p className="mb-3 text-center text-sm font-semibold uppercase tracking-wider text-white/85">
+                    <p className="mb-4 text-center text-base font-bold uppercase tracking-widest text-white/90">
                       {windowColumn.windowName}
                     </p>
-                    <div className="space-y-2">
-                      {windowColumn.tickets.length > 0 ? (
-                        windowColumn.tickets.map((ticket) => (
+
+                    <div className="flex flex-col items-center overflow-hidden rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-8">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-secondary/90">
+                        Now Serving
+                      </p>
+                      <p className="w-full text-center text-[clamp(1.75rem,4vw,4.5rem)] font-black leading-none tracking-wide text-white">
+                        {windowColumn.queueNumber ?? "— —"}
+                      </p>
+                      <p className="mt-3 truncate text-sm text-white/70">
+                        {windowColumn.inquiryType ?? "No active ticket"}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 flex flex-1 flex-col gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-white/50">
+                        Waiting
+                      </p>
+                      {windowColumn.waitingTickets.length > 0 ? (
+                        windowColumn.waitingTickets.map((ticket) => (
                           <div
-                            key={`${ticket.windowName}-${ticket.queueNumber}-${ticket.status}`}
-                            className="rounded-md border border-white/20 bg-white/5 px-3 py-2"
+                            key={`${ticket.windowName}-${ticket.queueNumber}`}
+                            className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-center"
                           >
-                            <p className="text-2xl font-bold tracking-wide text-white">
+                            <span className="text-xl font-bold tracking-wide text-white">
                               {ticket.queueNumber}
-                            </p>
-                            <p className="text-xs text-white/75">
-                              {ticket.inquiryType}
-                            </p>
-                            <p className="text-[11px] font-medium uppercase tracking-wide text-white/60">
-                              {ticket.status === "serving" ? "Now Serving" : "Waiting"}
-                            </p>
+                            </span>
                           </div>
                         ))
                       ) : (
-                        <p className="rounded-md border border-dashed border-white/20 px-3 py-4 text-center text-xs text-white/55">
-                          No assigned tickets
+                        <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-white/15 px-3 py-6 text-center text-xs text-white/45">
+                          No waiting tickets
                         </p>
                       )}
                     </div>
@@ -172,39 +240,71 @@ export default function DisplayPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-lg text-white/60">
+              <p className="m-auto text-center text-lg text-white/60">
                 No called tickets yet
               </p>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Recently Called / Up Next */}
-        <div className="w-full max-w-4xl">
-          <div className="rounded-t-xl bg-primary px-6 py-3">
-            <h2 className="text-center text-lg font-bold text-white">
-              Up Next
-            </h2>
-          </div>
-          <div className="rounded-b-xl border border-t-0 border-white/20 bg-white/5 px-8 py-8 backdrop-blur-sm">
-            {nextUp.length > 0 ? (
-              <div className="flex flex-wrap justify-center gap-4">
-                {nextUp.map((num) => (
-                  <span
-                    key={num}
-                    className="rounded-lg border border-secondary/50 bg-secondary/10 px-6 py-3 text-2xl font-semibold text-secondary"
-                  >
-                    {num}
-                  </span>
-                ))}
+        {/* Now Showing sidebar */}
+        {showVideoSection && (
+          <section className="flex w-[360px] flex-shrink-0 flex-col">
+            {/* <div className="rounded-t-2xl bg-primary px-8 py-4">
+              {/* <h2 className="text-xl font-bold tracking-wide text-white">
+                Now Showing
+              </h2> */}
+            {/* </div>  */}
+            <div className="flex flex-1 flex-col gap-3 overflow-hidden rounded-b-2xl border border-t-0 border-white/15 bg-white/5 p-3 backdrop-blur-sm">
+              {videoEmbedUrl ? (
+                <iframe
+                  src={videoEmbedUrl}
+                  className="aspect-video w-full flex-shrink-0 rounded-xl"
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                />
+              ) : (
+                <p className="flex aspect-video w-full flex-shrink-0 items-center justify-center rounded-xl border border-dashed border-white/15 text-center text-lg text-white/60">
+                  No video set
+                </p>
+              )}
+
+              <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-white/50">
+                  Priority Lane
+                </p>
+                {priorityNext.length > 0 ? (
+                  priorityNext.map((ticket, i) => (
+                    <div
+                      key={ticket.queueNumber}
+                      className={`flex flex-col items-center gap-1 rounded-2xl bg-white px-5 py-4 shadow-md ${
+                        i === 0 ? "ring-2 ring-secondary" : ""
+                      }`}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-primary/70">
+                        {ticket.windowName}
+                      </p>
+                      <p className="text-4xl font-black tracking-wide text-primary">
+                        {ticket.queueNumber}
+                      </p>
+                      <div className="my-1 h-px w-10 bg-primary/30" />
+                      <p className="truncate text-sm font-bold text-neutral-800">
+                        {ticket.studentName}
+                      </p>
+                      <p className="truncate text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                        {ticket.inquiryType}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="m-auto text-center text-sm text-white/45">
+                    No priority numbers in queue
+                  </p>
+                )}
               </div>
-            ) : (
-              <p className="text-center text-lg text-white/60">
-                No numbers in queue
-              </p>
-            )}
-          </div>
-        </div>
+            </div>
+          </section>
+        )}
       </main>
 
       {/* Footer */}

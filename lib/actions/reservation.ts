@@ -2,8 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
-import { PRIORITY_TYPES } from "@/lib/constants";
+import { PRIORITY_TYPES, MINUTES_PER_SLOT } from "@/lib/constants";
 import { listSettingsItems } from "@/lib/actions/settings";
+import { printReservationTicket } from "@/lib/printer/ticket";
+import { getDisplaySettings } from "@/lib/actions/display-settings";
 
 export type Reservation = {
   id: string;
@@ -51,7 +53,7 @@ export type CreateReservationInput = {
 };
 
 export type CreateReservationResult =
-  | { success: true; reservation: Reservation }
+  | { success: true; reservation: Reservation; printError?: string }
   | { success: false; error: string };
 
 export async function createReservation(
@@ -162,12 +164,35 @@ export async function createReservation(
     },
   });
 
+  const reservation: Reservation = {
+    ...(data as Reservation),
+    window_name: assignedWindow.name,
+  };
+
+  let printError: string | undefined;
+  try {
+    const printResult = await printReservationTicket({
+      queueNumber: reservation.queue_number,
+      studentName: reservation.student_name,
+      studentId: reservation.student_id,
+      department: reservation.department,
+      inquiryType: reservation.inquiry_type,
+      windowName: assignedWindow.name,
+      position: reservation.position,
+      estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
+      createdAt: new Date(reservation.created_at),
+    });
+    if (!printResult.success) {
+      printError = printResult.error;
+    }
+  } catch (err) {
+    printError = err instanceof Error ? err.message : "Unknown printer error";
+  }
+
   return {
     success: true,
-    reservation: {
-      ...(data as Reservation),
-      window_name: assignedWindow.name,
-    },
+    reservation,
+    ...(printError ? { printError } : {}),
   };
 }
 
@@ -243,7 +268,15 @@ export type DisplayData = {
     queueNumber: string | null;
     inquiryType: string | null;
   }>;
-  next: string[];
+  videoUrl: string | null;
+  videoEnabled: boolean;
+  audioEnabled: boolean;
+  priorityNext: Array<{
+    queueNumber: string;
+    studentName: string;
+    inquiryType: string;
+    windowName: string;
+  }>;
   assignedTickets: Array<{
     queueNumber: string;
     windowName: string;
@@ -265,7 +298,7 @@ export async function getDisplayData(): Promise<DisplayData> {
   noStore();
   const windows = await getWindows();
   const queue = await getActiveQueue();
-  const waiting = queue.filter((r) => r.status === "waiting");
+  const displaySettings = await getDisplaySettings();
 
   return {
     nowServingByWindow: windows.map((window) => {
@@ -280,7 +313,20 @@ export async function getDisplayData(): Promise<DisplayData> {
         inquiryType: current?.inquiry_type ?? null,
       };
     }),
-    next: waiting.slice(0, 5).map((r) => r.queue_number),
+    videoUrl: displaySettings.videoUrl,
+    videoEnabled: displaySettings.isEnabled,
+    audioEnabled: displaySettings.audioEnabled,
+    priorityNext: queue
+      .filter((reservation) => reservation.status === "waiting" && reservation.is_priority)
+      .slice(0, 5)
+      .map((reservation) => ({
+        queueNumber: reservation.queue_number,
+        studentName: reservation.student_name,
+        inquiryType: reservation.inquiry_type,
+        windowName:
+          windows.find((window) => window.id === reservation.window_id)?.name ??
+          "Unassigned",
+      })),
     assignedTickets: queue
       .filter(
         (reservation) =>

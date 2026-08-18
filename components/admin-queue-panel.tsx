@@ -9,6 +9,14 @@ import {
   type QueueWindow,
   type Reservation,
 } from "@/lib/actions/reservation";
+import {
+  getDisplaySettings,
+  setDisplayVideoEnabled,
+  setDisplayVideoUrl,
+} from "@/lib/actions/display-settings";
+import { parseVideoEmbedUrl } from "@/lib/video";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -32,6 +40,12 @@ export function AdminQueuePanel() {
   const [isSkipping, setIsSkipping] = useState(false);
   const [isSavingWindowCount, setIsSavingWindowCount] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [videoUrlInput, setVideoUrlInput] = useState("");
+  const [savedVideoUrl, setSavedVideoUrl] = useState<string | null>(null);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const [isSavingVideoUrl, setIsSavingVideoUrl] = useState(false);
+  const [isTogglingVideo, setIsTogglingVideo] = useState(false);
+  const [videoUrlError, setVideoUrlError] = useState<string | null>(null);
 
   const loadQueue = async () => {
     const todayQueueDate = getManilaDateString();
@@ -70,9 +84,17 @@ export function AdminQueuePanel() {
     });
   };
 
+  const loadDisplaySettings = async () => {
+    const settings = await getDisplaySettings();
+    setSavedVideoUrl(settings.videoUrl);
+    setVideoUrlInput(settings.videoUrl ?? "");
+    setIsVideoEnabled(settings.isEnabled);
+  };
+
   useEffect(() => {
     loadWindows();
     loadQueue();
+    loadDisplaySettings();
   }, []);
 
   useEffect(() => {
@@ -84,6 +106,13 @@ export function AdminQueuePanel() {
         { event: "*", schema: "public", table: "windows" },
         async () => {
           await loadWindows();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "display_settings" },
+        async () => {
+          await loadDisplaySettings();
         }
       )
       .on(
@@ -179,12 +208,38 @@ export function AdminQueuePanel() {
     setIsSavingWindowCount(false);
   };
 
+  const handleSaveVideoUrl = async (value: string) => {
+    setIsSavingVideoUrl(true);
+    setVideoUrlError(null);
+    const result = await setDisplayVideoUrl(value);
+    if (result.success) {
+      setSavedVideoUrl(value.trim() || null);
+    } else {
+      setVideoUrlError(result.error);
+    }
+    setIsSavingVideoUrl(false);
+  };
+
+  const handleToggleVideoEnabled = async (enabled: boolean) => {
+    setIsTogglingVideo(true);
+    setVideoUrlError(null);
+    const previous = isVideoEnabled;
+    setIsVideoEnabled(enabled);
+    const result = await setDisplayVideoEnabled(enabled);
+    if (!result.success) {
+      setIsVideoEnabled(previous);
+      setVideoUrlError(result.error);
+    }
+    setIsTogglingVideo(false);
+  };
+
   const selectedWindow = windows.find((window) => window.id === selectedWindowId);
   const nowServing = queue.find(
     (reservation) =>
       reservation.status === "serving" && reservation.window_id === selectedWindowId
   );
   const filteredQueue = queue.filter((reservation) => {
+    if (reservation.window_id !== selectedWindowId) return false;
     const q = searchTerm.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -363,6 +418,63 @@ export function AdminQueuePanel() {
         </div>
         <p className="text-sm text-muted-foreground">
           Active today: {windows.length} window(s)
+        </p>
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium">Screen Video</h3>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="video_enabled"
+              checked={isVideoEnabled}
+              onCheckedChange={(checked) =>
+                handleToggleVideoEnabled(checked === true)
+              }
+              disabled={isTogglingVideo}
+            />
+            <Label htmlFor="video_enabled" className="text-sm font-normal">
+              Show on display
+            </Label>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            type="url"
+            placeholder="Paste a YouTube or Vimeo link"
+            value={videoUrlInput}
+            onChange={(e) => setVideoUrlInput(e.target.value)}
+          />
+          <Button
+            type="button"
+            onClick={() => handleSaveVideoUrl(videoUrlInput)}
+            disabled={isSavingVideoUrl}
+          >
+            {isSavingVideoUrl ? "Saving..." : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setVideoUrlInput("");
+              handleSaveVideoUrl("");
+            }}
+            disabled={isSavingVideoUrl || !savedVideoUrl}
+          >
+            Clear
+          </Button>
+        </div>
+        {videoUrlError && (
+          <p className="text-sm text-destructive">{videoUrlError}</p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {!isVideoEnabled
+            ? "Disabled — display shows placeholder"
+            : savedVideoUrl
+              ? parseVideoEmbedUrl(savedVideoUrl)
+                ? `Showing on display: ${savedVideoUrl}`
+                : "Saved link could not be parsed"
+              : "No video set — display shows placeholder"}
         </p>
       </div>
 

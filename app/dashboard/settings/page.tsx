@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { listSettingsItems } from "@/lib/actions/settings";
+import { getDisplaySettings } from "@/lib/actions/display-settings";
 import { SettingsPanel } from "@/components/settings-panel";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -13,14 +14,21 @@ async function SettingsContent() {
     redirect("/auth/login");
   }
 
-  const [schoolYears, departments, inquiryTypes, degreePrograms, purposeOptions] =
-    await Promise.all([
-      listSettingsItems("school_years"),
-      listSettingsItems("departments"),
-      listSettingsItems("inquiry_types"),
-      listSettingsItems("degree_programs"),
-      listSettingsItems("purpose_of_request_options"),
-    ]);
+  const [
+    schoolYears,
+    departments,
+    inquiryTypes,
+    degreePrograms,
+    purposeOptions,
+    displaySettings,
+  ] = await Promise.all([
+    listSettingsItems("school_years"),
+    listSettingsItems("departments"),
+    listSettingsItems("inquiry_types"),
+    listSettingsItems("degree_programs"),
+    listSettingsItems("purpose_of_request_options"),
+    getDisplaySettings(),
+  ]);
 
   return (
     <div className="flex-1 w-full flex flex-col gap-6">
@@ -36,6 +44,7 @@ async function SettingsContent() {
         inquiryTypes={inquiryTypes}
         degreePrograms={degreePrograms}
         purposeOptions={purposeOptions}
+        displaySettings={displaySettings}
       />
       <div className="flex gap-4 text-sm">
         <Link href="/dashboard/admin" className="text-primary hover:underline">
