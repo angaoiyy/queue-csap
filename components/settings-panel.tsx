@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SettingsListEditor } from "@/components/settings-list-editor";
+import { DisplayFeaturesEditor } from "@/components/display-features-editor";
 import type { SettingsItem } from "@/lib/actions/settings";
+import type { DisplaySettings } from "@/lib/actions/display-settings";
 
 type Props = {
   schoolYears: SettingsItem[];
@@ -11,6 +13,7 @@ type Props = {
   inquiryTypes: SettingsItem[];
   degreePrograms: SettingsItem[];
   purposeOptions: SettingsItem[];
+  displaySettings: DisplaySettings;
 };
 
 const SECTIONS = [
@@ -19,6 +22,7 @@ const SECTIONS = [
   { key: "inquiry_types", label: "Type of Inquiry" },
   { key: "degree_programs", label: "Degree Programs" },
   { key: "purpose_of_request_options", label: "Purpose of Request" },
+  { key: "display", label: "Display Screen" },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
@@ -29,6 +33,7 @@ export function SettingsPanel({
   inquiryTypes,
   degreePrograms,
   purposeOptions,
+  displaySettings,
 }: Props) {
   const [activeSection, setActiveSection] = useState<SectionKey>("school_years");
 
@@ -106,6 +111,10 @@ export function SettingsPanel({
           description="Shown when the selected inquiry type requires a purpose of request."
           initialItems={purposeOptions}
         />
+      )}
+
+      {activeSection === "display" && (
+        <DisplayFeaturesEditor initialSettings={displaySettings} />
       )}
     </div>
   );

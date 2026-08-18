@@ -17,10 +17,14 @@ async function ConfirmationContent({ searchParams }: Props) {
   const params = await searchParams;
   const queue = (params.queue as string) ?? "";
   const name = (params.name as string) ?? "";
+  const studentId = (params.studentId as string) ?? "";
+  const department = (params.department as string) ?? "";
   const inquiryType = (params.inquiryType as string) ?? "";
   const window = (params.window as string) ?? "";
   const position = (params.position as string) ?? "0";
   const wait = (params.wait as string) ?? "0";
+  const date = (params.date as string) ?? "";
+  const printError = (params.printError as string) ?? "";
 
   if (!queue) {
     return (
@@ -62,39 +66,62 @@ async function ConfirmationContent({ searchParams }: Props) {
               <span className="font-medium">Name:</span> {name}
             </p>
             <p>
+              <span className="font-medium">Student ID:</span> {studentId}
+            </p>
+            <p>
+              <span className="font-medium">Department:</span> {department}
+            </p>
+            <p>
               <span className="font-medium">Inquiry Type:</span> {inquiryType}
             </p>
             <p>
-              <span className="font-medium">Assigned Window:</span> {window || "To be announced"}
+              <span className="font-medium">Assigned Window:</span>{" "}
+              {window || "To be announced"}
             </p>
-            <p>
+            {/* <p>
               <span className="font-medium">Position in line:</span> {position}
-            </p>
-            <p>
+            </p> */}
+            {/* <p>
               <span className="font-medium">Estimated wait:</span> ~
               {Number(wait) || 0} minutes
-            </p>
+            </p> */}
+            {date && (
+              <p>
+                <span className="font-medium">Date:</span>{" "}
+                {new Date(date).toLocaleString("en-PH", {
+                  timeZone: "Asia/Manila",
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </p>
+            )}
           </div>
+          {printError && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              Your queue number is confirmed, but the ticket could not be
+              printed. Please show this screen to staff.
+            </div>
+          )}
           <div className="flex flex-col gap-2">
-            
             <Button variant="default" asChild>
               <Link href="/reserve">Reserve Another</Link>
             </Button>
           </div>
         </CardContent>
       </Card>
-     
     </div>
   );
 }
 
 export default function ConfirmationPage(props: Props) {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center p-6">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center p-6">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      }
+    >
       <ConfirmationContent searchParams={props.searchParams} />
     </Suspense>
   );

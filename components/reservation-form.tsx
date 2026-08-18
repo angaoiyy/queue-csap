@@ -116,10 +116,14 @@ export function ReservationForm({
         const params = new URLSearchParams({
           queue: r.queue_number,
           name: r.student_name,
+          studentId: r.student_id,
+          department: r.department,
           inquiryType: r.inquiry_type,
           window: r.window_name ?? "",
           position: String(r.position),
           wait: String(estimatedMinutes),
+          date: r.created_at,
+          ...(result.printError ? { printError: result.printError } : {}),
         });
         setFormData({
           student_name: "",

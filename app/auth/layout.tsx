@@ -1,9 +1,6 @@
-'use client';
+"use client";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-
-
-
 
 export default function AuthLayout({
   children,
@@ -23,7 +20,7 @@ export default function AuthLayout({
             width={56}
             height={56}
             className="object-contain cursor-pointer "
-            onClick={ () => router.push("/") }
+            onClick={() => router.push("/")}
           />
           <div>
             <h1 className="font-bold text-lg leading-tight">
