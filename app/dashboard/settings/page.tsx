@@ -18,6 +18,7 @@ async function SettingsContent() {
     schoolYears,
     departments,
     inquiryTypes,
+    admissionInquiryTypes,
     degreePrograms,
     purposeOptions,
     displaySettings,
@@ -25,6 +26,7 @@ async function SettingsContent() {
     listSettingsItems("school_years"),
     listSettingsItems("departments"),
     listSettingsItems("inquiry_types"),
+    listSettingsItems("admission_inquiry_types"),
     listSettingsItems("degree_programs"),
     listSettingsItems("purpose_of_request_options"),
     getDisplaySettings(),
@@ -42,6 +44,7 @@ async function SettingsContent() {
         schoolYears={schoolYears}
         departments={departments}
         inquiryTypes={inquiryTypes}
+        admissionInquiryTypes={admissionInquiryTypes}
         degreePrograms={degreePrograms}
         purposeOptions={purposeOptions}
         displaySettings={displaySettings}

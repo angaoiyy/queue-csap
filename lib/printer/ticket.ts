@@ -33,6 +33,25 @@ export type TicketData = {
 
 export type PrintResult = { success: true } | { success: false; error: string };
 
+// Printer hardware wraps raw at a fixed column, splitting mid-word — wrap on
+// word boundaries ourselves before sending each line.
+function wrapText(text: string, maxWidth: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 function buildTicketBuffer(ticket: TicketData): Buffer {
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
@@ -54,9 +73,22 @@ function buildTicketBuffer(ticket: TicketData): Buffer {
   printer.bold(false);
   printer.drawLine();
 
-  printer.setTextDoubleHeight();
+  // 58mm paper = ~32 normal-width chars per line; pick widest scale that still fits.
+  const CHARS_PER_LINE_NORMAL = 32;
+  const widthScaleFor = (text: string) =>
+    Math.max(
+      0,
+      Math.min(3, Math.floor(CHARS_PER_LINE_NORMAL / text.length) - 1),
+    );
+
+  const match = ticket.queueNumber.match(/^([A-Za-z]+)(\d+)$/);
+  const numberLines = match ? [match[1], match[2]] : [ticket.queueNumber];
+
   printer.bold(true);
-  printer.println(ticket.queueNumber);
+  for (const line of numberLines) {
+    printer.setTextSize(4, widthScaleFor(line));
+    printer.println(line);
+  }
   printer.bold(false);
   printer.setTextNormal();
   // printer.drawLine();
@@ -73,8 +105,10 @@ function buildTicketBuffer(ticket: TicketData): Buffer {
 
   printer.drawLine();
   printer.alignCenter();
-  printer.println("Please wait for your number to be called.");
-  printer.cut();
+  for (const line of wrapText("Please wait for your number to be called.", 32)) {
+    printer.println(line);
+  }
+  printer.cut({ verticalTabAmount: 1 });
 
   return printer.getBuffer();
 }

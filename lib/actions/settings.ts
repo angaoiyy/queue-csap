@@ -7,6 +7,7 @@ export type SettingsTable =
   | "school_years"
   | "departments"
   | "inquiry_types"
+  | "admission_inquiry_types"
   | "degree_programs"
   | "purpose_of_request_options";
 
@@ -14,7 +15,8 @@ const TABLE_COLUMNS: Record<SettingsTable, string> = {
   school_years: "id, label, sort_order, is_active",
   departments: "id, label, requires_degree_program, sort_order, is_active",
   inquiry_types: "id, label, prefix, requires_purpose, sort_order, is_active",
-  degree_programs: "id, label, sort_order, is_active",
+  admission_inquiry_types: "id, label, prefix, requires_purpose, sort_order, is_active",
+  degree_programs: "id, label, department_id, sort_order, is_active",
   purpose_of_request_options: "id, label, sort_order, is_active",
 };
 
@@ -26,6 +28,7 @@ export type SettingsItem = {
   prefix?: string;
   requires_degree_program?: boolean;
   requires_purpose?: boolean;
+  department_id?: string | null;
 };
 
 export type SettingsItemInput = {
@@ -61,7 +64,7 @@ export async function createSettingsItem(
 ): Promise<SettingsActionResult> {
   const label = input.label.trim();
   if (!label) return { success: false, error: "Label is required" };
-  if (table === "inquiry_types" && !input.prefix?.trim()) {
+  if ((table === "inquiry_types" || table === "admission_inquiry_types") && !input.prefix?.trim()) {
     return { success: false, error: "Prefix is required" };
   }
 
@@ -71,7 +74,7 @@ export async function createSettingsItem(
     existing.length > 0 ? Math.max(...existing.map((item) => item.sort_order)) + 1 : 0;
 
   const row: Record<string, unknown> = { label, sort_order: nextOrder, is_active: true };
-  if (table === "inquiry_types") {
+  if (table === "inquiry_types" || table === "admission_inquiry_types") {
     row.prefix = input.prefix!.trim().toUpperCase();
     row.requires_purpose = input.requires_purpose ?? false;
   }
@@ -93,12 +96,12 @@ export async function updateSettingsItem(
 ): Promise<SettingsActionResult> {
   const label = input.label.trim();
   if (!label) return { success: false, error: "Label is required" };
-  if (table === "inquiry_types" && !input.prefix?.trim()) {
+  if ((table === "inquiry_types" || table === "admission_inquiry_types") && !input.prefix?.trim()) {
     return { success: false, error: "Prefix is required" };
   }
 
   const row: Record<string, unknown> = { label };
-  if (table === "inquiry_types") {
+  if (table === "inquiry_types" || table === "admission_inquiry_types") {
     row.prefix = input.prefix!.trim().toUpperCase();
     row.requires_purpose = input.requires_purpose ?? false;
   }
@@ -147,4 +150,6 @@ export async function reorderSettingsItems(
 function revalidateSettings(_table: SettingsTable) {
   revalidatePath("/dashboard/settings");
   revalidatePath("/reserve");
+  revalidatePath("/reserve/old");
+  revalidatePath("/reserve/new");
 }

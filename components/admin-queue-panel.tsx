@@ -11,6 +11,7 @@ import {
 } from "@/lib/actions/reservation";
 import {
   getDisplaySettings,
+  setDisplayMarqueeText,
   setDisplayVideoEnabled,
   setDisplayVideoUrl,
 } from "@/lib/actions/display-settings";
@@ -46,6 +47,9 @@ export function AdminQueuePanel() {
   const [isSavingVideoUrl, setIsSavingVideoUrl] = useState(false);
   const [isTogglingVideo, setIsTogglingVideo] = useState(false);
   const [videoUrlError, setVideoUrlError] = useState<string | null>(null);
+  const [marqueeTextInput, setMarqueeTextInput] = useState("");
+  const [isSavingMarqueeText, setIsSavingMarqueeText] = useState(false);
+  const [marqueeTextError, setMarqueeTextError] = useState<string | null>(null);
 
   const loadQueue = async () => {
     const todayQueueDate = getManilaDateString();
@@ -89,6 +93,7 @@ export function AdminQueuePanel() {
     setSavedVideoUrl(settings.videoUrl);
     setVideoUrlInput(settings.videoUrl ?? "");
     setIsVideoEnabled(settings.isEnabled);
+    setMarqueeTextInput(settings.marqueeText);
   };
 
   useEffect(() => {
@@ -233,6 +238,16 @@ export function AdminQueuePanel() {
     setIsTogglingVideo(false);
   };
 
+  const handleSaveMarqueeText = async (value: string) => {
+    setIsSavingMarqueeText(true);
+    setMarqueeTextError(null);
+    const result = await setDisplayMarqueeText(value);
+    if (!result.success) {
+      setMarqueeTextError(result.error);
+    }
+    setIsSavingMarqueeText(false);
+  };
+
   const selectedWindow = windows.find((window) => window.id === selectedWindowId);
   const nowServing = queue.find(
     (reservation) =>
@@ -245,7 +260,7 @@ export function AdminQueuePanel() {
     return (
       reservation.queue_number.toLowerCase().includes(q) ||
       reservation.student_name.toLowerCase().includes(q) ||
-      reservation.student_id.toLowerCase().includes(q)
+      (reservation.student_id ?? "").toLowerCase().includes(q)
     );
   });
   const totalPages = Math.max(1, Math.ceil(filteredQueue.length / PAGE_SIZE));
@@ -337,7 +352,7 @@ export function AdminQueuePanel() {
                     {r.queue_number}
                   </td>
                   <td className="px-4 py-3">{r.student_name}</td>
-                  <td className="px-4 py-3">{r.student_id}</td>
+                  <td className="px-4 py-3">{r.student_id ?? "—"}</td>
                   <td className="px-4 py-3">{r.department}</td>
                   <td className="px-4 py-3">{r.inquiry_type}</td>
                   <td className="px-4 py-3">
@@ -475,6 +490,31 @@ export function AdminQueuePanel() {
                 ? `Showing on display: ${savedVideoUrl}`
                 : "Saved link could not be parsed"
               : "No video set — display shows placeholder"}
+        </p>
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-3">
+        <h3 className="font-medium">Footer Marquee Text</h3>
+        <div className="flex items-center gap-2">
+          <Input
+            type="text"
+            placeholder="Text scrolling across the display footer"
+            value={marqueeTextInput}
+            onChange={(e) => setMarqueeTextInput(e.target.value)}
+          />
+          <Button
+            type="button"
+            onClick={() => handleSaveMarqueeText(marqueeTextInput)}
+            disabled={isSavingMarqueeText}
+          >
+            {isSavingMarqueeText ? "Saving..." : "Save"}
+          </Button>
+        </div>
+        {marqueeTextError && (
+          <p className="text-sm text-destructive">{marqueeTextError}</p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          Scrolls across the bottom of the public display.
         </p>
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,86 +22,39 @@ import {
 } from "@/components/ui/select";
 import {
   createReservation,
-  lookupStudent,
   type CreateReservationInput,
 } from "@/lib/actions/reservation";
 import type { SettingsItem } from "@/lib/actions/settings";
 import { PRIORITY_TYPES, MINUTES_PER_SLOT } from "@/lib/constants";
 
-type ReservationFormProps = {
+type AdmissionFormProps = {
   departments: SettingsItem[];
   degreePrograms: SettingsItem[];
   termsSchoolYear: SettingsItem[];
   inquiryTypes: SettingsItem[];
-  purposeOptions: SettingsItem[];
 };
 
-export function ReservationForm({
+const INITIAL_FORM_DATA: CreateReservationInput = {
+  application_type: "new",
+  student_name: "",
+  department: "",
+  degree_program: "",
+  term_school_year: "",
+  inquiry_type: "",
+  priority_type: "",
+};
+
+export function AdmissionForm({
   departments,
   degreePrograms,
   termsSchoolYear,
   inquiryTypes,
-  purposeOptions,
-}: ReservationFormProps) {
+}: AdmissionFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [isLookingUp, setIsLookingUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wasAutofilled, setWasAutofilled] = useState(false);
-  const [formData, setFormData] = useState<CreateReservationInput>({
-    application_type: "old",
-    student_name: "",
-    student_id: "",
-    department: "",
-    degree_program: "",
-    term_school_year: "",
-    inquiry_type: "",
-    purpose_of_request: "",
-    priority_type: "",
-  });
-  const [purposeSelection, setPurposeSelection] = useState("");
-  const [purposeOther, setPurposeOther] = useState("");
+  const [formData, setFormData] = useState<CreateReservationInput>(INITIAL_FORM_DATA);
   const [isPriority, setIsPriority] = useState(false);
-  const touchedRef = useRef<Set<"department" | "degree_program">>(new Set());
-  const lookupSeq = useRef(0);
-
-  const runLookup = async (query: string) => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) return;
-
-    const seq = ++lookupSeq.current;
-    setIsLookingUp(true);
-    try {
-      const result = await lookupStudent(trimmed);
-      if (!result || seq !== lookupSeq.current) return;
-      setFormData((prev) => {
-        const next = {
-          ...prev,
-          student_name: result.student_name,
-          student_id: result.student_id,
-        };
-        if (!touchedRef.current.has("department")) {
-          next.department = result.department;
-        }
-        if (!touchedRef.current.has("degree_program")) {
-          const dept = departments.find((d) => d.label === next.department);
-          next.degree_program = dept?.requires_degree_program
-            ? result.degree_program ?? ""
-            : "";
-        }
-        return next;
-      });
-      setWasAutofilled(true);
-    } finally {
-      if (seq === lookupSeq.current) setIsLookingUp(false);
-    }
-  };
-
-  const handleLookupKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    runLookup(e.currentTarget.value);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +70,6 @@ export function ReservationForm({
         const params = new URLSearchParams({
           queue: r.queue_number,
           name: r.student_name,
-          studentId: r.student_id ?? "",
           department: r.department,
           inquiryType: r.inquiry_type,
           window: r.window_name ?? "",
@@ -126,23 +78,8 @@ export function ReservationForm({
           date: r.created_at,
           ...(result.printError ? { printError: result.printError } : {}),
         });
-        setFormData({
-          application_type: "old",
-          student_name: "",
-          student_id: "",
-          department: "",
-          degree_program: "",
-          term_school_year: "",
-          inquiry_type: "",
-          purpose_of_request: "",
-          priority_type: "",
-        });
-        setPurposeSelection("");
-        setPurposeOther("");
+        setFormData(INITIAL_FORM_DATA);
         setIsPriority(false);
-        touchedRef.current = new Set();
-        lookupSeq.current += 1;
-        setWasAutofilled(false);
         router.push(`/reserve/confirmation?${params.toString()}`);
       } else {
         setError(result.error);
@@ -155,7 +92,7 @@ export function ReservationForm({
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle>Reserve Queue Number</CardTitle>
+        <CardTitle>New Student Admission</CardTitle>
         <CardDescription>
           Fill in your details to get a priority number for the selected
           inquiry type.
@@ -163,23 +100,6 @@ export function ReservationForm({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-          <div className="grid gap-2">
-            <Label htmlFor="student_id">Student ID</Label>
-            <Input
-              id="student_id"
-              placeholder="2024-00123"
-              required
-              value={formData.student_id}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, student_id: e.target.value }))
-              }
-              onKeyDown={handleLookupKeyDown}
-            />
-            <p className="text-xs text-muted-foreground">
-              Press Enter to autofill from a previous reservation
-            </p>
-          </div>
-
           <div className="grid gap-2">
             <Label htmlFor="student_name">Student Name</Label>
             <Input
@@ -190,7 +110,6 @@ export function ReservationForm({
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, student_name: e.target.value }))
               }
-              onKeyDown={handleLookupKeyDown}
             />
           </div>
 
@@ -200,7 +119,6 @@ export function ReservationForm({
               required
               value={formData.department}
               onValueChange={(v) => {
-                touchedRef.current.add("department");
                 setFormData((prev) => ({
                   ...prev,
                   department: v,
@@ -219,11 +137,6 @@ export function ReservationForm({
                 ))}
               </SelectContent>
             </Select>
-            {wasAutofilled && (
-              <p className="text-xs text-muted-foreground">
-                Auto-filled from a previous reservation
-              </p>
-            )}
           </div>
 
           {(() => {
@@ -235,10 +148,9 @@ export function ReservationForm({
                 <Select
                   required
                   value={formData.degree_program}
-                  onValueChange={(v) => {
-                    touchedRef.current.add("degree_program");
-                    setFormData((prev) => ({ ...prev, degree_program: v }));
-                  }}
+                  onValueChange={(v) =>
+                    setFormData((prev) => ({ ...prev, degree_program: v }))
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select degree program" />
@@ -284,15 +196,9 @@ export function ReservationForm({
             <Select
               required
               value={formData.inquiry_type}
-              onValueChange={(v) => {
-                setPurposeSelection("");
-                setPurposeOther("");
-                setFormData((prev) => ({
-                  ...prev,
-                  inquiry_type: v,
-                  purpose_of_request: "",
-                }));
-              }}
+              onValueChange={(v) =>
+                setFormData((prev) => ({ ...prev, inquiry_type: v }))
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select inquiry type" />
@@ -306,54 +212,6 @@ export function ReservationForm({
               </SelectContent>
             </Select>
           </div>
-
-          {inquiryTypes.find((type) => type.label === formData.inquiry_type)
-            ?.requires_purpose && (
-            <div className="grid gap-2">
-              <Label>Purpose of Request</Label>
-              <Select
-                required
-                value={purposeSelection}
-                onValueChange={(v) => {
-                  setPurposeSelection(v);
-                  if (v === "Others") {
-                    setFormData((prev) => ({
-                      ...prev,
-                      purpose_of_request: purposeOther,
-                    }));
-                  } else {
-                    setPurposeOther("");
-                    setFormData((prev) => ({ ...prev, purpose_of_request: v }));
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select purpose" />
-                </SelectTrigger>
-                <SelectContent>
-                  {purposeOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.label}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {purposeSelection === "Others" && (
-                <Input
-                  placeholder="Please specify"
-                  required
-                  value={purposeOther}
-                  onChange={(e) => {
-                    setPurposeOther(e.target.value);
-                    setFormData((prev) => ({
-                      ...prev,
-                      purpose_of_request: e.target.value,
-                    }));
-                  }}
-                />
-              )}
-            </div>
-          )}
 
           <div className="flex items-center gap-2">
             <Checkbox
@@ -396,9 +254,7 @@ export function ReservationForm({
             </div>
           )}
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? "Reserving..." : "Reserve Queue Number"}

@@ -9,7 +9,6 @@ import Image from "next/image";
 
 const AUDIO_ENABLED_KEY = "display-audio-enabled";
 const INSTITUTION = "Colegio de San Antonio de Padua";
-const LOCATION = "Guinsay, Danao City, Philippines";
 
 function useClock() {
   const [time, setTime] = useState("");
@@ -111,7 +110,8 @@ export default function DisplayPage() {
     for (const w of data.nowServingByWindow) {
       const previous = lastServing.get(w.windowId);
       if (w.queueNumber && w.queueNumber !== previous) {
-        if (audioEnabled && data.audioEnabled) speakNowServing(w.queueNumber, w.windowName);
+        if (audioEnabled && data.audioEnabled)
+          speakNowServing(w.queueNumber, w.windowName, w.studentName);
         lastServing.set(w.windowId, w.queueNumber);
       } else if (!w.queueNumber) {
         lastServing.delete(w.windowId);
@@ -134,11 +134,13 @@ export default function DisplayPage() {
   const showVideoSection = data.videoEnabled;
   const priorityNext = data.priorityNext;
   const assignedTickets = data.assignedTickets;
+  const skippedTickets = data.skippedTickets;
   const ticketsByWindow = nowServingByWindow.map((windowData) => ({
     windowId: windowData.windowId,
     windowName: windowData.windowName,
     queueNumber: windowData.queueNumber,
     inquiryType: windowData.inquiryType,
+    studentName: windowData.studentName,
     waitingTickets: assignedTickets.filter(
       (ticket) =>
         ticket.windowName === windowData.windowName &&
@@ -147,7 +149,7 @@ export default function DisplayPage() {
   }));
 
   return (
-    <div className="flex min-h-screen flex-col bg-[hsl(356,45%,15%)]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[hsl(356,45%,15%)]">
       {!audioEnabled && data.audioEnabled && (
         <button
           type="button"
@@ -161,41 +163,42 @@ export default function DisplayPage() {
         </button>
       )}
       {/* Header */}
-      <header className="flex items-center justify-between bg-primary px-8 py-4">
+      <header className="flex flex-shrink-0 items-center justify-between bg-primary px-8 py-3">
         <div className="flex items-center gap-4">
           <Image
             src="/csap.png"
             alt="CSAP Logo"
-            width={56}
-            height={56}
+            width={48}
+            height={48}
             className="object-contain"
           />
           <div>
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-xl font-bold text-white">
               CSAP Queue Management System
             </h1>
-            <p className="text-sm text-white/90">{INSTITUTION}</p>
+            <p className="text-xs text-white/90">{INSTITUTION}</p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-3xl font-bold text-white">{time}</p>
-          <p className="text-sm text-white/90">{date}</p>
+          <p className="text-2xl font-bold text-white">{time}</p>
+          <p className="text-xs text-white/90">{date}</p>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="flex flex-1 gap-8 px-10 py-8">
+      <main className="flex min-h-0 flex-1 flex-col gap-3 px-10 py-4">
+      <div className="flex min-h-0 flex-1 gap-6">
         {/* Windows */}
-        <section className="flex flex-1 flex-col">
-          <div className="rounded-t-2xl bg-primary px-8 py-4">
-            <h2 className="text-xl font-bold tracking-wide text-white">
+        <section className="flex min-h-0 flex-1 flex-col">
+          <div className="flex-shrink-0 rounded-t-2xl bg-primary px-8 py-3">
+            <h2 className="text-lg font-bold tracking-wide text-white">
               Live Queue
             </h2>
           </div>
-          <div className="flex flex-1 rounded-b-2xl border border-t-0 border-white/15 bg-white/5 p-6 backdrop-blur-sm">
+          <div className="flex min-h-0 flex-1 rounded-b-2xl border border-t-0 border-white/15 bg-white/5 p-4 backdrop-blur-sm">
             {ticketsByWindow.length > 0 ? (
               <div
-                className="grid flex-1 gap-6"
+                className="grid flex-1 gap-4"
                 style={{
                   gridTemplateColumns: `repeat(${Math.max(
                     1,
@@ -206,39 +209,46 @@ export default function DisplayPage() {
                 {ticketsByWindow.map((windowColumn) => (
                   <div
                     key={windowColumn.windowId}
-                    className="flex flex-col rounded-xl border border-white/15 bg-black/15 p-5"
+                    className="flex min-h-0 flex-col rounded-xl border border-white/15 bg-black/15 p-4"
                   >
-                    <p className="mb-4 text-center text-base font-bold uppercase tracking-widest text-white/90">
+                    <p className="mb-3 text-center text-base font-bold uppercase tracking-widest text-white/90">
                       {windowColumn.windowName}
                     </p>
 
-                    <div className="flex flex-col items-center overflow-hidden rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-8 [container-type:inline-size]">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-secondary/90">
+                    <div className="flex flex-shrink-0 flex-col items-center overflow-hidden rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-4 [container-type:inline-size]">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-secondary/90">
                         Now Serving
                       </p>
-                      <p className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(1.5rem,18cqw,4.5rem)] font-black leading-none tracking-wide text-white">
+                      <p className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[clamp(1.5rem,15cqw,3.75rem)] font-black leading-none tracking-wide text-white">
                         {windowColumn.queueNumber ?? "— —"}
                       </p>
-                      <p className="mt-3 truncate text-sm text-white/70">
+                      {windowColumn.studentName && (
+                        <p className="mt-1 w-full truncate text-center text-sm font-semibold text-white/90">
+                          {windowColumn.studentName}
+                        </p>
+                      )}
+                      <p className="mt-2 truncate text-sm text-white/70">
                         {windowColumn.inquiryType ?? "No active ticket"}
                       </p>
                     </div>
 
-                    <div className="mt-4 flex flex-1 flex-col gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-white/50">
+                    <div className="mt-3 flex min-h-0 flex-1 flex-col gap-2">
+                      <p className="flex-shrink-0 text-xs font-semibold uppercase tracking-wider text-white/50">
                         Waiting
                       </p>
                       {windowColumn.waitingTickets.length > 0 ? (
-                        windowColumn.waitingTickets.map((ticket) => (
-                          <div
-                            key={`${ticket.windowName}-${ticket.queueNumber}`}
-                            className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-center"
-                          >
-                            <span className="text-xl font-bold tracking-wide text-white">
-                              {ticket.queueNumber}
-                            </span>
-                          </div>
-                        ))
+                        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+                          {windowColumn.waitingTickets.map((ticket) => (
+                            <div
+                              key={`${ticket.windowName}-${ticket.queueNumber}`}
+                              className="flex-shrink-0 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-center"
+                            >
+                              <span className="text-xl font-bold tracking-wide text-white">
+                                {ticket.queueNumber}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
                         <p className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-white/15 px-3 py-6 text-center text-xs text-white/45">
                           No waiting tickets
@@ -258,13 +268,8 @@ export default function DisplayPage() {
 
         {/* Now Showing sidebar */}
         {showVideoSection && (
-          <section className="flex w-[360px] flex-shrink-0 flex-col">
-            {/* <div className="rounded-t-2xl bg-primary px-8 py-4">
-              {/* <h2 className="text-xl font-bold tracking-wide text-white">
-                Now Showing
-              </h2> */}
-            {/* </div>  */}
-            <div className="flex flex-1 flex-col gap-3 overflow-hidden rounded-b-2xl border border-t-0 border-white/15 bg-white/5 p-3 backdrop-blur-sm">
+          <section className="flex w-[320px] flex-shrink-0 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-2xl border border-white/15 bg-white/5 p-3 backdrop-blur-sm">
               {videoEmbedUrl ? (
                 <iframe
                   src={videoEmbedUrl}
@@ -278,15 +283,15 @@ export default function DisplayPage() {
                 </p>
               )}
 
-              <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-white/50">
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-1">
+                <p className="flex-shrink-0 text-xs font-semibold uppercase tracking-wider text-white/50">
                   Priority Lane
                 </p>
                 {priorityNext.length > 0 ? (
                   priorityNext.map((ticket, i) => (
                     <div
                       key={ticket.queueNumber}
-                      className={`flex flex-col items-center gap-1 rounded-2xl bg-white px-5 py-4 shadow-md ${
+                      className={`flex flex-shrink-0 flex-col items-center gap-1 rounded-2xl bg-white px-5 py-3 shadow-md ${
                         i === 0 ? "ring-2 ring-secondary" : ""
                       }`}
                     >
@@ -314,14 +319,49 @@ export default function DisplayPage() {
             </div>
           </section>
         )}
+      </div>
+
+        {/* Skipped Numbers */}
+        <section className="flex flex-shrink-0 flex-col">
+          <div className="flex items-center gap-3 rounded-2xl bg-primary px-6 py-2">
+            <h2 className="flex-shrink-0 text-sm font-bold tracking-wide text-white">
+              Skipped Numbers
+            </h2>
+            <div className="flex flex-1 gap-2 overflow-x-auto">
+              {skippedTickets.length > 0 ? (
+                skippedTickets.map((ticket) => (
+                  <div
+                    key={`${ticket.windowName}-${ticket.queueNumber}`}
+                    className="flex flex-shrink-0 items-baseline gap-1.5 rounded-md border border-white/15 bg-white/10 px-3 py-1"
+                  >
+                    <span className="text-sm font-bold tracking-wide text-white">
+                      {ticket.queueNumber}
+                    </span>
+                    <span className="text-[9px] font-semibold uppercase tracking-widest text-white/60">
+                      {ticket.windowName}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-white/45">No skipped numbers</p>
+              )}
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* Footer */}
-      <footer className="bg-primary px-8 py-4 text-center">
-        <p className="text-sm text-white/95">
-          Please proceed to your assigned counter when your number is called
-        </p>
-        <p className="mt-1 text-xs text-white/70">{LOCATION}</p>
+      <footer className="flex-shrink-0 bg-primary px-8 py-3 text-center">
+        <div className="overflow-hidden whitespace-nowrap">
+          <div className="inline-flex animate-marquee">
+            <span className="px-8 text-xl font-semibold text-white/95">
+              {data.marqueeText}
+            </span>
+            <span className="px-8 text-xl font-semibold text-white/95" aria-hidden="true">
+              {data.marqueeText}
+            </span>
+          </div>
+        </div>
       </footer>
     </div>
   );

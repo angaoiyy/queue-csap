@@ -12,14 +12,18 @@ export type DisplaySettings = {
   videoUrl: string | null;
   isEnabled: boolean;
   audioEnabled: boolean;
+  marqueeText: string;
 };
+
+const DEFAULT_MARQUEE_TEXT =
+  "Please proceed to your assigned counter when your number is called";
 
 export async function getDisplaySettings(): Promise<DisplaySettings> {
   noStore();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("display_settings")
-    .select("video_url, is_enabled, audio_enabled")
+    .select("video_url, is_enabled, audio_enabled, marquee_text")
     .eq("id", 1)
     .single();
 
@@ -28,7 +32,32 @@ export async function getDisplaySettings(): Promise<DisplaySettings> {
     videoUrl: data?.video_url ?? null,
     isEnabled: data?.is_enabled ?? true,
     audioEnabled: data?.audio_enabled ?? true,
+    marqueeText: data?.marquee_text ?? DEFAULT_MARQUEE_TEXT,
   };
+}
+
+export async function setDisplayMarqueeText(
+  text: string
+): Promise<DisplaySettingsActionResult> {
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    return { success: false, error: "Marquee text cannot be empty." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("display_settings")
+    .update({ marquee_text: trimmed, updated_at: new Date().toISOString() })
+    .eq("id", 1);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath("/display");
+  revalidatePath("/dashboard/admin");
+  return { success: true };
 }
 
 export async function setDisplayVideoUrl(

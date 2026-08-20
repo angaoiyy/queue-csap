@@ -11,6 +11,7 @@ type Props = {
   schoolYears: SettingsItem[];
   departments: SettingsItem[];
   inquiryTypes: SettingsItem[];
+  admissionInquiryTypes: SettingsItem[];
   degreePrograms: SettingsItem[];
   purposeOptions: SettingsItem[];
   displaySettings: DisplaySettings;
@@ -20,6 +21,7 @@ const SECTIONS = [
   { key: "school_years", label: "School Year" },
   { key: "departments", label: "Departments" },
   { key: "inquiry_types", label: "Type of Inquiry" },
+  { key: "admission_inquiry_types", label: "Admission Inquiry Type" },
   { key: "degree_programs", label: "Degree Programs" },
   { key: "purpose_of_request_options", label: "Purpose of Request" },
   { key: "display", label: "Display Screen" },
@@ -31,6 +33,7 @@ export function SettingsPanel({
   schoolYears,
   departments,
   inquiryTypes,
+  admissionInquiryTypes,
   degreePrograms,
   purposeOptions,
   displaySettings,
@@ -86,6 +89,23 @@ export function SettingsPanel({
           initialItems={inquiryTypes}
           extraFields={[
             { key: "prefix", label: "Queue prefix (e.g. COE)", type: "text" },
+            {
+              key: "requires_purpose",
+              label: "Requires purpose of request",
+              type: "checkbox",
+            },
+          ]}
+        />
+      )}
+
+      {activeSection === "admission_inquiry_types" && (
+        <SettingsListEditor
+          table="admission_inquiry_types"
+          title="Admission Inquiry Type"
+          description="Inquiry types shown on the New Student admission form, with their queue-number prefix (e.g. ENR001)."
+          initialItems={admissionInquiryTypes}
+          extraFields={[
+            { key: "prefix", label: "Queue prefix (e.g. ENR)", type: "text" },
             {
               key: "requires_purpose",
               label: "Requires purpose of request",

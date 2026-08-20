@@ -10,7 +10,7 @@ import { getDisplaySettings } from "@/lib/actions/display-settings";
 export type Reservation = {
   id: string;
   student_name: string;
-  student_id: string;
+  student_id: string | null;
   department: string;
   degree_program: string | null;
   term_school_year: string;
@@ -18,6 +18,7 @@ export type Reservation = {
   purpose_of_request: string | null;
   priority_type: string | null;
   is_priority: boolean;
+  application_type: "old" | "new";
   queue_number: string;
   position: number;
   status: string;
@@ -42,10 +43,11 @@ export type ActivityAction =
   | "window_count_changed";
 
 export type CreateReservationInput = {
+  application_type: "old" | "new";
   student_name: string;
-  student_id: string;
+  student_id?: string;
   department: string;
-  degree_program: string;
+  degree_program?: string;
   term_school_year: string;
   inquiry_type: string;
   purpose_of_request?: string;
@@ -66,8 +68,11 @@ export async function createReservation(
     return { success: false, error: "No active windows configured for today" };
   }
 
+  const isOld = input.application_type === "old";
+  const inquiryTable = isOld ? "inquiry_types" : "admission_inquiry_types";
+
   const [inquiryTypes, departments] = await Promise.all([
-    listSettingsItems("inquiry_types", { activeOnly: true }),
+    listSettingsItems(inquiryTable, { activeOnly: true }),
     listSettingsItems("departments", { activeOnly: true }),
   ]);
 
@@ -85,11 +90,15 @@ export async function createReservation(
     return { success: false, error: "Invalid department" };
   }
 
-  if (departmentConfig.requires_degree_program && !input.degree_program.trim()) {
+  if (isOld && !input.student_id?.trim()) {
+    return { success: false, error: "Student ID is required" };
+  }
+
+  if (departmentConfig.requires_degree_program && !input.degree_program?.trim()) {
     return { success: false, error: "Degree program is required" };
   }
 
-  if (inquiryTypeConfig.requires_purpose && !input.purpose_of_request?.trim()) {
+  if (isOld && inquiryTypeConfig.requires_purpose && !input.purpose_of_request?.trim()) {
     return { success: false, error: "Purpose of request is required" };
   }
 
@@ -106,6 +115,7 @@ export async function createReservation(
     .select("*", { count: "exact", head: true })
     .eq("queue_date", manilaToday)
     .eq("inquiry_type", input.inquiry_type)
+    .eq("application_type", input.application_type)
     .in("status", ["waiting", "serving"]);
 
   if (countError) {
@@ -120,17 +130,19 @@ export async function createReservation(
     .from("reservations")
     .insert({
       student_name: input.student_name,
-      student_id: input.student_id,
+      student_id: isOld ? input.student_id : null,
       department: input.department,
       degree_program: departmentConfig.requires_degree_program
         ? input.degree_program
         : null,
       term_school_year: input.term_school_year,
       inquiry_type: input.inquiry_type,
-      purpose_of_request: inquiryTypeConfig.requires_purpose
-        ? input.purpose_of_request?.trim() || null
-        : null,
+      purpose_of_request:
+        isOld && inquiryTypeConfig.requires_purpose
+          ? input.purpose_of_request?.trim() || null
+          : null,
       priority_type: priorityType,
+      application_type: input.application_type,
       queue_number,
       position,
       status: "waiting",
@@ -174,7 +186,7 @@ export async function createReservation(
     const printResult = await printReservationTicket({
       queueNumber: reservation.queue_number,
       studentName: reservation.student_name,
-      studentId: reservation.student_id,
+      studentId: reservation.student_id ?? "",
       department: reservation.department,
       inquiryType: reservation.inquiry_type,
       windowName: assignedWindow.name,
@@ -212,6 +224,7 @@ export async function lookupStudent(query: string): Promise<StudentLookupResult>
   const { data, error } = await supabase
     .from("reservations")
     .select("student_name, student_id, department, degree_program, created_at")
+    .eq("application_type", "old")
     .or(`student_id.ilike.%${escaped}%,student_name.ilike.%${escaped}%`)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -224,12 +237,19 @@ export async function lookupStudent(query: string): Promise<StudentLookupResult>
     listSettingsItems("degree_programs", { activeOnly: true }),
   ]);
 
-  const department = departments.some((d) => d.label === data.department)
-    ? data.department
-    : null;
   const degree_program = degreePrograms.some((d) => d.label === data.degree_program)
     ? data.degree_program
     : null;
+
+  let department = departments.some((d) => d.label === data.department)
+    ? data.department
+    : null;
+
+  if (!department && degree_program) {
+    const matchedProgram = degreePrograms.find((p) => p.label === degree_program);
+    const derivedDept = departments.find((d) => d.id === matchedProgram?.department_id);
+    department = derivedDept?.label ?? null;
+  }
 
   if (!department) return null;
 
@@ -261,16 +281,33 @@ export async function getActiveQueue() {
   return data as Reservation[];
 }
 
+export async function getSkippedQueue() {
+  noStore();
+  const supabase = await createClient();
+  const manilaToday = getManilaDateString();
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .eq("queue_date", manilaToday)
+    .eq("status", "skipped")
+    .order("called_at", { ascending: false });
+
+  if (error) throw error;
+  return data as Reservation[];
+}
+
 export type DisplayData = {
   nowServingByWindow: Array<{
     windowId: string;
     windowName: string;
     queueNumber: string | null;
     inquiryType: string | null;
+    studentName: string | null;
   }>;
   videoUrl: string | null;
   videoEnabled: boolean;
   audioEnabled: boolean;
+  marqueeText: string;
   priorityNext: Array<{
     queueNumber: string;
     studentName: string;
@@ -282,6 +319,11 @@ export type DisplayData = {
     windowName: string;
     inquiryType: string;
     status: string;
+  }>;
+  skippedTickets: Array<{
+    queueNumber: string;
+    windowName: string;
+    inquiryType: string;
   }>;
 };
 
@@ -298,6 +340,7 @@ export async function getDisplayData(): Promise<DisplayData> {
   noStore();
   const windows = await getWindows();
   const queue = await getActiveQueue();
+  const skippedQueue = await getSkippedQueue();
   const displaySettings = await getDisplaySettings();
 
   return {
@@ -311,11 +354,13 @@ export async function getDisplayData(): Promise<DisplayData> {
         windowName: window.name,
         queueNumber: current?.queue_number ?? null,
         inquiryType: current?.inquiry_type ?? null,
+        studentName: current?.student_name ?? null,
       };
     }),
     videoUrl: displaySettings.videoUrl,
     videoEnabled: displaySettings.isEnabled,
     audioEnabled: displaySettings.audioEnabled,
+    marqueeText: displaySettings.marqueeText,
     priorityNext: queue
       .filter((reservation) => reservation.status === "waiting" && reservation.is_priority)
       .slice(0, 5)
@@ -341,6 +386,13 @@ export async function getDisplayData(): Promise<DisplayData> {
         inquiryType: reservation.inquiry_type,
         status: reservation.status,
       })),
+    skippedTickets: skippedQueue.slice(0, 10).map((reservation) => ({
+      queueNumber: reservation.queue_number,
+      windowName:
+        windows.find((window) => window.id === reservation.window_id)?.name ??
+        "Unknown Window",
+      inquiryType: reservation.inquiry_type,
+    })),
   };
 }
 
@@ -639,7 +691,7 @@ async function logActivity(input: {
     const { data } = await supabase.auth.getClaims();
     const claims = data?.claims as { sub?: string; email?: string } | undefined;
 
-    await supabase.from("activity_logs").insert({
+    const { error } = await supabase.from("activity_logs").insert({
       action: input.action,
       actor_user_id: claims?.sub ?? null,
       actor_email: claims?.email ?? null,
@@ -647,8 +699,10 @@ async function logActivity(input: {
       entity_id: input.entity_id ?? null,
       metadata: input.metadata ?? {},
     });
-  } catch {
+    if (error) throw error;
+  } catch (err) {
     // Activity logging should not block queue operations.
+    console.error("logActivity failed", err);
   }
 }
 

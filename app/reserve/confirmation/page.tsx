@@ -65,9 +65,11 @@ async function ConfirmationContent({ searchParams }: Props) {
             <p>
               <span className="font-medium">Name:</span> {name}
             </p>
-            <p>
-              <span className="font-medium">Student ID:</span> {studentId}
-            </p>
+            {studentId && (
+              <p>
+                <span className="font-medium">Student ID:</span> {studentId}
+              </p>
+            )}
             <p>
               <span className="font-medium">Department:</span> {department}
             </p>
