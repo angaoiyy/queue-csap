@@ -10,10 +10,11 @@ import {
 } from "@/lib/actions/display-settings";
 
 type Props = {
+  officeSlug: string;
   initialSettings: DisplaySettings;
 };
 
-export function DisplayFeaturesEditor({ initialSettings }: Props) {
+export function DisplayFeaturesEditor({ officeSlug, initialSettings }: Props) {
   const [audioEnabled, setAudioEnabled] = useState(initialSettings.audioEnabled);
   const [videoEnabled, setVideoEnabled] = useState(initialSettings.isEnabled);
   const [isTogglingAudio, setIsTogglingAudio] = useState(false);
@@ -25,7 +26,7 @@ export function DisplayFeaturesEditor({ initialSettings }: Props) {
     setError(null);
     const previous = audioEnabled;
     setAudioEnabled(checked);
-    const result = await setDisplayAudioEnabled(checked);
+    const result = await setDisplayAudioEnabled(officeSlug, checked);
     if (!result.success) {
       setAudioEnabled(previous);
       setError(result.error);
@@ -38,7 +39,7 @@ export function DisplayFeaturesEditor({ initialSettings }: Props) {
     setError(null);
     const previous = videoEnabled;
     setVideoEnabled(checked);
-    const result = await setDisplayVideoEnabled(checked);
+    const result = await setDisplayVideoEnabled(officeSlug, checked);
     if (!result.success) {
       setVideoEnabled(previous);
       setError(result.error);

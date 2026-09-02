@@ -16,11 +16,20 @@ import {
 
 type Props = {
   email: string;
+  officeSlug: string | null;
+  officeLabel: string | null;
+  role?: "staff" | "super_admin";
 };
 
-export function UserNavDropdown({ email }: Props) {
+export function UserNavDropdown({
+  email,
+  officeSlug,
+  officeLabel,
+  role = "staff",
+}: Props) {
   const router = useRouter();
   const initials = email.slice(0, 2).toUpperCase();
+  const base = officeSlug ? `/dashboard/${officeSlug}` : "/dashboard";
 
   const logout = async () => {
     const supabase = createClient();
@@ -44,15 +53,25 @@ export function UserNavDropdown({ email }: Props) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="truncate">{email}</DropdownMenuLabel>
+        {officeLabel && (
+          <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">
+            {officeLabel}
+          </DropdownMenuLabel>
+        )}
         <DropdownMenuSeparator />
+        {role === "super_admin" && (
+          <DropdownMenuItem asChild>
+            <Link href="/dashboard/staff">Staff Approvals</Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
-          <Link href="/dashboard/admin">Admin Panel</Link>
+          <Link href={`${base}/admin`}>Admin Panel</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/dashboard/activity-logs">Activity Logs</Link>
+          <Link href={`${base}/activity-logs`}>Activity Logs</Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/dashboard/settings">Settings</Link>
+          <Link href={`${base}/settings`}>Settings</Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={logout}>Logout</DropdownMenuItem>

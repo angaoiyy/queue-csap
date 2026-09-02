@@ -12,17 +12,28 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+type OfficeOption = { slug: string; label: string };
+
 export function SignUpForm({
   className,
+  offices,
   ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+}: React.ComponentPropsWithoutRef<"div"> & { offices: OfficeOption[] }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
+  const [officeSlug, setOfficeSlug] = useState(offices[0]?.slug ?? "");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
@@ -38,16 +49,27 @@ export function SignUpForm({
       setIsLoading(false);
       return;
     }
+    if (!officeSlug) {
+      setError("Select an office");
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/dashboard/admin`,
+          emailRedirectTo: `${window.location.origin}/auth/pending`,
+          data: { office_slug: officeSlug },
         },
       });
       if (error) throw error;
+      // A new staff account must be approved by the super admin before it can
+      // be used. When email confirmation is disabled Supabase auto-creates a
+      // session at sign-up - drop it so the account stays fully signed out
+      // until the super admin approves it.
+      await supabase.auth.signOut();
       router.push("/auth/sign-up-success");
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
@@ -61,7 +83,7 @@ export function SignUpForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Sign up</CardTitle>
-          <CardDescription>Create a new account</CardDescription>
+          <CardDescription>Create a new staff account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSignUp}>
@@ -76,6 +98,21 @@ export function SignUpForm({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="office">Office</Label>
+                <Select value={officeSlug} onValueChange={setOfficeSlug}>
+                  <SelectTrigger id="office">
+                    <SelectValue placeholder="Select your office" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {offices.map((office) => (
+                      <SelectItem key={office.slug} value={office.slug}>
+                        {office.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
                 <div className="flex items-center">

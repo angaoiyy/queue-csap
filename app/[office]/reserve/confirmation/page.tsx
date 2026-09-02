@@ -10,21 +10,22 @@ import {
 } from "@/components/ui/card";
 
 type Props = {
+  params: Promise<{ office: string }>;
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-async function ConfirmationContent({ searchParams }: Props) {
-  const params = await searchParams;
-  const queue = (params.queue as string) ?? "";
-  const name = (params.name as string) ?? "";
-  const studentId = (params.studentId as string) ?? "";
-  const department = (params.department as string) ?? "";
-  const inquiryType = (params.inquiryType as string) ?? "";
-  const window = (params.window as string) ?? "";
-  const position = (params.position as string) ?? "0";
-  const wait = (params.wait as string) ?? "0";
-  const date = (params.date as string) ?? "";
-  const printError = (params.printError as string) ?? "";
+async function ConfirmationContent({ params, searchParams }: Props) {
+  const { office } = await params;
+  const sp = await searchParams;
+  const queue = (sp.queue as string) ?? "";
+  const name = (sp.name as string) ?? "";
+  const studentId = (sp.studentId as string) ?? "";
+  const department = (sp.department as string) ?? "";
+  const inquiryType = (sp.inquiryType as string) ?? "";
+  const claimOrRequest = (sp.claimOrRequest as string) ?? "";
+  const window = (sp.window as string) ?? "";
+  const date = (sp.date as string) ?? "";
+  const printError = (sp.printError as string) ?? "";
 
   if (!queue) {
     return (
@@ -38,7 +39,7 @@ async function ConfirmationContent({ searchParams }: Props) {
           </CardHeader>
           <CardContent>
             <Button asChild>
-              <Link href="/reserve">Go to Reserve</Link>
+              <Link href={`/${office}/reserve`}>Go to Reserve</Link>
             </Button>
           </CardContent>
         </Card>
@@ -76,17 +77,16 @@ async function ConfirmationContent({ searchParams }: Props) {
             <p>
               <span className="font-medium">Inquiry Type:</span> {inquiryType}
             </p>
+            {claimOrRequest && (
+              <p>
+                <span className="font-medium">Claim or Request:</span>{" "}
+                {claimOrRequest}
+              </p>
+            )}
             <p>
               <span className="font-medium">Assigned Window:</span>{" "}
               {window || "To be announced"}
             </p>
-            {/* <p>
-              <span className="font-medium">Position in line:</span> {position}
-            </p> */}
-            {/* <p>
-              <span className="font-medium">Estimated wait:</span> ~
-              {Number(wait) || 0} minutes
-            </p> */}
             {date && (
               <p>
                 <span className="font-medium">Date:</span>{" "}
@@ -106,7 +106,7 @@ async function ConfirmationContent({ searchParams }: Props) {
           )}
           <div className="flex flex-col gap-2">
             <Button variant="default" asChild>
-              <Link href="/reserve">Reserve Another</Link>
+              <Link href={`/${office}/reserve`}>Reserve Another</Link>
             </Button>
           </div>
         </CardContent>
@@ -124,7 +124,7 @@ export default function ConfirmationPage(props: Props) {
         </div>
       }
     >
-      <ConfirmationContent searchParams={props.searchParams} />
+      <ConfirmationContent {...props} />
     </Suspense>
   );
 }

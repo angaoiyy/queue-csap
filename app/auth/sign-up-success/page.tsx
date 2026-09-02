@@ -13,14 +13,17 @@ export default function Page() {
           <Card>
             <CardHeader>
               <CardTitle className="text-2xl">
-                Thank you for signing up!
+                Account created — pending approval
               </CardTitle>
-              <CardDescription>Check your email to confirm</CardDescription>
+              <CardDescription>
+                A super admin must approve your account
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                You&apos;ve successfully signed up. Please check your email to
-                confirm your account before signing in.
+                Your staff account has been created but you are not signed in
+                yet. The system administrator must approve it before you can log
+                in. If a confirmation email was sent, confirm it as well.
               </p>
             </CardContent>
           </Card>

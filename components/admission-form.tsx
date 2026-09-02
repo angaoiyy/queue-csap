@@ -25,35 +25,44 @@ import {
   type CreateReservationInput,
 } from "@/lib/actions/reservation";
 import type { SettingsItem } from "@/lib/actions/settings";
-import { PRIORITY_TYPES, MINUTES_PER_SLOT } from "@/lib/constants";
+import {
+  PRIORITY_TYPES,
+  MINUTES_PER_SLOT,
+  CLAIM_OR_REQUEST_OPTIONS,
+} from "@/lib/constants";
 
 type AdmissionFormProps = {
+  officeSlug: string;
   departments: SettingsItem[];
   degreePrograms: SettingsItem[];
   termsSchoolYear: SettingsItem[];
   inquiryTypes: SettingsItem[];
-};
-
-const INITIAL_FORM_DATA: CreateReservationInput = {
-  application_type: "new",
-  student_name: "",
-  department: "",
-  degree_program: "",
-  term_school_year: "",
-  inquiry_type: "",
-  priority_type: "",
+  requiresClaimRequest: boolean;
 };
 
 export function AdmissionForm({
+  officeSlug,
   departments,
   degreePrograms,
   termsSchoolYear,
   inquiryTypes,
+  requiresClaimRequest,
 }: AdmissionFormProps) {
   const router = useRouter();
+  const initialFormData: CreateReservationInput = {
+    office_slug: officeSlug,
+    application_type: "new",
+    student_name: "",
+    department: "",
+    degree_program: "",
+    term_school_year: "",
+    inquiry_type: "",
+    claim_or_request: "",
+    priority_type: "",
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [formData, setFormData] = useState<CreateReservationInput>(INITIAL_FORM_DATA);
+  const [formData, setFormData] = useState<CreateReservationInput>(initialFormData);
   const [isPriority, setIsPriority] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,15 +81,16 @@ export function AdmissionForm({
           name: r.student_name,
           department: r.department,
           inquiryType: r.inquiry_type,
+          claimOrRequest: r.claim_or_request ?? "",
           window: r.window_name ?? "",
           position: String(r.position),
           wait: String(estimatedMinutes),
           date: r.created_at,
           ...(result.printError ? { printError: result.printError } : {}),
         });
-        setFormData(INITIAL_FORM_DATA);
+        setFormData(initialFormData);
         setIsPriority(false);
-        router.push(`/reserve/confirmation?${params.toString()}`);
+        router.push(`/${officeSlug}/reserve/confirmation?${params.toString()}`);
       } else {
         setError(result.error);
       }
@@ -212,6 +222,30 @@ export function AdmissionForm({
               </SelectContent>
             </Select>
           </div>
+
+          {requiresClaimRequest && (
+            <div className="grid gap-2">
+              <Label>Claim or Request?</Label>
+              <Select
+                required
+                value={formData.claim_or_request}
+                onValueChange={(v) =>
+                  setFormData((prev) => ({ ...prev, claim_or_request: v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLAIM_OR_REQUEST_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <Checkbox
