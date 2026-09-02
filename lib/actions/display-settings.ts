@@ -3,12 +3,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { parseVideoEmbedUrl } from "@/lib/video";
+import { resolveOfficeId } from "@/lib/offices";
 
 export type DisplaySettingsActionResult =
   | { success: true }
   | { success: false; error: string };
 
 export type DisplaySettings = {
+  officeId: string;
   videoUrl: string | null;
   isEnabled: boolean;
   audioEnabled: boolean;
@@ -18,17 +20,20 @@ export type DisplaySettings = {
 const DEFAULT_MARQUEE_TEXT =
   "Please proceed to your assigned counter when your number is called";
 
-export async function getDisplaySettings(): Promise<DisplaySettings> {
+export async function getDisplaySettings(
+  officeId: string
+): Promise<DisplaySettings> {
   noStore();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("display_settings")
-    .select("video_url, is_enabled, audio_enabled, marquee_text")
-    .eq("id", 1)
-    .single();
+    .select("office_id, video_url, is_enabled, audio_enabled, marquee_text")
+    .eq("office_id", officeId)
+    .maybeSingle();
 
   if (error) throw error;
   return {
+    officeId,
     videoUrl: data?.video_url ?? null,
     isEnabled: data?.is_enabled ?? true,
     audioEnabled: data?.audio_enabled ?? true,
@@ -36,91 +41,62 @@ export async function getDisplaySettings(): Promise<DisplaySettings> {
   };
 }
 
-export async function setDisplayMarqueeText(
-  text: string
+async function updateDisplaySettings(
+  officeSlug: string,
+  patch: Record<string, unknown>
 ): Promise<DisplaySettingsActionResult> {
-  const trimmed = text.trim();
-
-  if (!trimmed) {
-    return { success: false, error: "Marquee text cannot be empty." };
-  }
-
+  const officeId = await resolveOfficeId(officeSlug);
   const supabase = await createClient();
   const { error } = await supabase
     .from("display_settings")
-    .update({ marquee_text: trimmed, updated_at: new Date().toISOString() })
-    .eq("id", 1);
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("office_id", officeId);
 
   if (error) {
     return { success: false, error: error.message };
   }
 
-  revalidatePath("/display");
-  revalidatePath("/dashboard/admin");
+  revalidatePath(`/${officeSlug}/display`);
+  revalidatePath(`/dashboard/${officeSlug}/admin`);
+  revalidatePath(`/dashboard/${officeSlug}/settings`);
   return { success: true };
 }
 
+export async function setDisplayMarqueeText(
+  officeSlug: string,
+  text: string
+): Promise<DisplaySettingsActionResult> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { success: false, error: "Marquee text cannot be empty." };
+  }
+  return updateDisplaySettings(officeSlug, { marquee_text: trimmed });
+}
+
 export async function setDisplayVideoUrl(
+  officeSlug: string,
   url: string
 ): Promise<DisplaySettingsActionResult> {
   const trimmed = url.trim();
-
   if (trimmed && !parseVideoEmbedUrl(trimmed)) {
     return {
       success: false,
       error: "Unrecognized video link. Paste a YouTube or Vimeo share link.",
     };
   }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("display_settings")
-    .update({ video_url: trimmed || null, updated_at: new Date().toISOString() })
-    .eq("id", 1);
-
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  revalidatePath("/display");
-  revalidatePath("/dashboard/admin");
-  return { success: true };
+  return updateDisplaySettings(officeSlug, { video_url: trimmed || null });
 }
 
 export async function setDisplayVideoEnabled(
+  officeSlug: string,
   enabled: boolean
 ): Promise<DisplaySettingsActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("display_settings")
-    .update({ is_enabled: enabled, updated_at: new Date().toISOString() })
-    .eq("id", 1);
-
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  revalidatePath("/display");
-  revalidatePath("/dashboard/admin");
-  revalidatePath("/dashboard/settings");
-  return { success: true };
+  return updateDisplaySettings(officeSlug, { is_enabled: enabled });
 }
 
 export async function setDisplayAudioEnabled(
+  officeSlug: string,
   enabled: boolean
 ): Promise<DisplaySettingsActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("display_settings")
-    .update({ audio_enabled: enabled, updated_at: new Date().toISOString() })
-    .eq("id", 1);
-
-  if (error) {
-    return { success: false, error: error.message };
-  }
-
-  revalidatePath("/display");
-  revalidatePath("/dashboard/admin");
-  revalidatePath("/dashboard/settings");
-  return { success: true };
+  return updateDisplaySettings(officeSlug, { audio_enabled: enabled });
 }

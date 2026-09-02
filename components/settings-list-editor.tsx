@@ -22,6 +22,8 @@ type ExtraFieldDef =
   | { key: "requires_degree_program" | "requires_purpose"; label: string; type: "checkbox" };
 
 type Props = {
+  officeSlug: string;
+  officeId: string;
   table: SettingsTable;
   title: string;
   description: string;
@@ -37,6 +39,8 @@ const EMPTY_FORM: SettingsItemInput = {
 };
 
 export function SettingsListEditor({
+  officeSlug,
+  officeId,
   table,
   title,
   description,
@@ -56,13 +60,13 @@ export function SettingsListEditor({
     setError(null);
     setIsBusy(true);
     try {
-      const result = await createSettingsItem(table, newForm);
+      const result = await createSettingsItem(table, newForm, officeSlug);
       if (!result.success) {
         setError(result.error);
         return;
       }
       setNewForm(EMPTY_FORM);
-      setItems(await listSettingsItems(table));
+      setItems(await listSettingsItems(table, { officeId }));
     } finally {
       setIsBusy(false);
     }
@@ -82,7 +86,7 @@ export function SettingsListEditor({
     setError(null);
     setIsBusy(true);
     try {
-      const result = await updateSettingsItem(table, id, editForm);
+      const result = await updateSettingsItem(table, id, editForm, officeSlug);
       if (!result.success) {
         setError(result.error);
         return;
@@ -100,7 +104,12 @@ export function SettingsListEditor({
     setError(null);
     setIsBusy(true);
     try {
-      const result = await setSettingsItemActive(table, item.id, !item.is_active);
+      const result = await setSettingsItemActive(
+        table,
+        item.id,
+        !item.is_active,
+        officeSlug
+      );
       if (!result.success) {
         setError(result.error);
         return;
@@ -125,7 +134,7 @@ export function SettingsListEditor({
     setError(null);
     setIsBusy(true);
     try {
-      const result = await reorderSettingsItems(table, orderedIds);
+      const result = await reorderSettingsItems(table, orderedIds, officeSlug);
       if (!result.success) {
         setError(result.error);
         return;

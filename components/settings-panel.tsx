@@ -4,10 +4,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SettingsListEditor } from "@/components/settings-list-editor";
 import { DisplayFeaturesEditor } from "@/components/display-features-editor";
+import { BookingFormEditor } from "@/components/booking-form-editor";
 import type { SettingsItem } from "@/lib/actions/settings";
 import type { DisplaySettings } from "@/lib/actions/display-settings";
 
 type Props = {
+  officeSlug: string;
+  officeId: string;
   schoolYears: SettingsItem[];
   departments: SettingsItem[];
   inquiryTypes: SettingsItem[];
@@ -15,6 +18,7 @@ type Props = {
   degreePrograms: SettingsItem[];
   purposeOptions: SettingsItem[];
   displaySettings: DisplaySettings;
+  requiresClaimRequest: boolean;
 };
 
 const SECTIONS = [
@@ -24,12 +28,15 @@ const SECTIONS = [
   { key: "admission_inquiry_types", label: "Admission Inquiry Type" },
   { key: "degree_programs", label: "Degree Programs" },
   { key: "purpose_of_request_options", label: "Purpose of Request" },
+  { key: "booking_form", label: "Booking Form" },
   { key: "display", label: "Display Screen" },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
 export function SettingsPanel({
+  officeSlug,
+  officeId,
   schoolYears,
   departments,
   inquiryTypes,
@@ -37,8 +44,10 @@ export function SettingsPanel({
   degreePrograms,
   purposeOptions,
   displaySettings,
+  requiresClaimRequest,
 }: Props) {
   const [activeSection, setActiveSection] = useState<SectionKey>("school_years");
+  const editorScope = { officeSlug, officeId };
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,6 +67,7 @@ export function SettingsPanel({
 
       {activeSection === "school_years" && (
         <SettingsListEditor
+          {...editorScope}
           table="school_years"
           title="School Year / Term"
           description="Terms shown on the booking form, e.g. '1st Sem AY 2025-2026'."
@@ -67,6 +77,7 @@ export function SettingsPanel({
 
       {activeSection === "departments" && (
         <SettingsListEditor
+          {...editorScope}
           table="departments"
           title="Departments"
           description="Departments students can select. Mark a department if it should prompt for a degree program."
@@ -83,6 +94,7 @@ export function SettingsPanel({
 
       {activeSection === "inquiry_types" && (
         <SettingsListEditor
+          {...editorScope}
           table="inquiry_types"
           title="Type of Inquiry"
           description="Inquiry types and their queue-number prefix (e.g. COE001). Mark one if it should prompt for a purpose of request."
@@ -100,6 +112,7 @@ export function SettingsPanel({
 
       {activeSection === "admission_inquiry_types" && (
         <SettingsListEditor
+          {...editorScope}
           table="admission_inquiry_types"
           title="Admission Inquiry Type"
           description="Inquiry types shown on the New Student admission form, with their queue-number prefix (e.g. ENR001)."
@@ -117,6 +130,7 @@ export function SettingsPanel({
 
       {activeSection === "degree_programs" && (
         <SettingsListEditor
+          {...editorScope}
           table="degree_programs"
           title="Degree Programs"
           description="Shown when the selected department requires a degree program."
@@ -126,6 +140,7 @@ export function SettingsPanel({
 
       {activeSection === "purpose_of_request_options" && (
         <SettingsListEditor
+          {...editorScope}
           table="purpose_of_request_options"
           title="Purpose of Request"
           description="Shown when the selected inquiry type requires a purpose of request."
@@ -133,8 +148,18 @@ export function SettingsPanel({
         />
       )}
 
+      {activeSection === "booking_form" && (
+        <BookingFormEditor
+          officeSlug={officeSlug}
+          initialRequiresClaimRequest={requiresClaimRequest}
+        />
+      )}
+
       {activeSection === "display" && (
-        <DisplayFeaturesEditor initialSettings={displaySettings} />
+        <DisplayFeaturesEditor
+          officeSlug={officeSlug}
+          initialSettings={displaySettings}
+        />
       )}
     </div>
   );

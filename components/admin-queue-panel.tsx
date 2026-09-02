@@ -29,7 +29,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export function AdminQueuePanel() {
+type Props = {
+  officeSlug: string;
+  officeId: string;
+};
+
+export function AdminQueuePanel({ officeSlug, officeId }: Props) {
   const PAGE_SIZE = 5;
   const [windows, setWindows] = useState<QueueWindow[]>([]);
   const [selectedWindowId, setSelectedWindowId] = useState("");
@@ -57,6 +62,7 @@ export function AdminQueuePanel() {
     const { data, error: queryError } = await supabase
       .from("reservations")
       .select("*")
+      .eq("office_id", officeId)
       .eq("queue_date", todayQueueDate)
       .in("status", ["waiting", "serving"])
       .order("is_priority", { ascending: false })
@@ -72,7 +78,8 @@ export function AdminQueuePanel() {
     const supabase = createClient();
     const { data, error: queryError } = await supabase
       .from("windows")
-      .select("id, name, is_active")
+      .select("id, name, is_active, office_id")
+      .eq("office_id", officeId)
       .eq("is_active", true)
       .order("name", { ascending: true });
     if (queryError) {
@@ -89,7 +96,7 @@ export function AdminQueuePanel() {
   };
 
   const loadDisplaySettings = async () => {
-    const settings = await getDisplaySettings();
+    const settings = await getDisplaySettings(officeId);
     setSavedVideoUrl(settings.videoUrl);
     setVideoUrlInput(settings.videoUrl ?? "");
     setIsVideoEnabled(settings.isEnabled);
@@ -100,34 +107,53 @@ export function AdminQueuePanel() {
     loadWindows();
     loadQueue();
     loadDisplaySettings();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeId]);
 
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("admin-reservations-changes")
+      .channel(`admin-reservations-changes-${officeSlug}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "windows" },
+        {
+          event: "*",
+          schema: "public",
+          table: "windows",
+          filter: `office_id=eq.${officeId}`,
+        },
         async () => {
           await loadWindows();
         }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "display_settings" },
+        {
+          event: "*",
+          schema: "public",
+          table: "display_settings",
+          filter: `office_id=eq.${officeId}`,
+        },
         async () => {
           await loadDisplaySettings();
         }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "reservations" },
+        {
+          event: "*",
+          schema: "public",
+          table: "reservations",
+          filter: `office_id=eq.${officeId}`,
+        },
         async (payload) => {
           const eventType = payload.eventType;
           if (eventType === "INSERT" || eventType === "UPDATE") {
             const nextRow = payload.new as Reservation;
-            if (nextRow.queue_date !== getManilaDateString()) {
+            if (
+              nextRow.queue_date !== getManilaDateString() ||
+              nextRow.office_id !== officeId
+            ) {
               return;
             }
             setQueue((prev) => {
@@ -159,7 +185,8 @@ export function AdminQueuePanel() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeSlug, officeId]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -167,7 +194,8 @@ export function AdminQueuePanel() {
       loadWindows();
     }, 10000);
     return () => clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeId]);
 
   const handleCallNext = async () => {
     if (!selectedWindowId) {
@@ -176,7 +204,7 @@ export function AdminQueuePanel() {
     }
     setIsCalling(true);
     setError(null);
-    const result = await callNextReservation(selectedWindowId);
+    const result = await callNextReservation(officeSlug, selectedWindowId);
     if (result.success) {
       await loadQueue();
     } else {
@@ -192,7 +220,7 @@ export function AdminQueuePanel() {
     }
     setIsSkipping(true);
     setError(null);
-    const result = await skipCurrentReservation(selectedWindowId);
+    const result = await skipCurrentReservation(officeSlug, selectedWindowId);
     if (result.success) {
       await loadQueue();
     } else {
@@ -204,7 +232,7 @@ export function AdminQueuePanel() {
   const handleSaveWindowCount = async () => {
     setIsSavingWindowCount(true);
     setError(null);
-    const result = await setAvailableWindowCount(Number(windowCountInput));
+    const result = await setAvailableWindowCount(officeSlug, Number(windowCountInput));
     if (!result.success) {
       setError(result.error);
     } else {
@@ -216,7 +244,7 @@ export function AdminQueuePanel() {
   const handleSaveVideoUrl = async (value: string) => {
     setIsSavingVideoUrl(true);
     setVideoUrlError(null);
-    const result = await setDisplayVideoUrl(value);
+    const result = await setDisplayVideoUrl(officeSlug, value);
     if (result.success) {
       setSavedVideoUrl(value.trim() || null);
     } else {
@@ -230,7 +258,7 @@ export function AdminQueuePanel() {
     setVideoUrlError(null);
     const previous = isVideoEnabled;
     setIsVideoEnabled(enabled);
-    const result = await setDisplayVideoEnabled(enabled);
+    const result = await setDisplayVideoEnabled(officeSlug, enabled);
     if (!result.success) {
       setIsVideoEnabled(previous);
       setVideoUrlError(result.error);
@@ -241,13 +269,15 @@ export function AdminQueuePanel() {
   const handleSaveMarqueeText = async (value: string) => {
     setIsSavingMarqueeText(true);
     setMarqueeTextError(null);
-    const result = await setDisplayMarqueeText(value);
+    const result = await setDisplayMarqueeText(officeSlug, value);
     if (!result.success) {
       setMarqueeTextError(result.error);
     }
     setIsSavingMarqueeText(false);
   };
 
+  const showClaimColumn = queue.some((reservation) => reservation.claim_or_request);
+  const columnCount = showClaimColumn ? 10 : 9;
   const selectedWindow = windows.find((window) => window.id === selectedWindowId);
   const nowServing = queue.find(
     (reservation) =>
@@ -332,6 +362,9 @@ export function AdminQueuePanel() {
               <th className="px-4 py-3 text-left font-medium">Student ID</th>
               <th className="px-4 py-3 text-left font-medium">Department</th>
               <th className="px-4 py-3 text-left font-medium">Inquiry Type</th>
+              {showClaimColumn && (
+                <th className="px-4 py-3 text-left font-medium">Claim / Request</th>
+              )}
               <th className="px-4 py-3 text-left font-medium">Window</th>
               <th className="px-4 py-3 text-left font-medium">Term</th>
               <th className="px-4 py-3 text-left font-medium">Priority</th>
@@ -341,7 +374,10 @@ export function AdminQueuePanel() {
           <tbody>
             {paginatedQueue.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={columnCount}
+                  className="px-4 py-8 text-center text-muted-foreground"
+                >
                   No reservations found
                 </td>
               </tr>
@@ -355,6 +391,15 @@ export function AdminQueuePanel() {
                   <td className="px-4 py-3">{r.student_id ?? "—"}</td>
                   <td className="px-4 py-3">{r.department}</td>
                   <td className="px-4 py-3">{r.inquiry_type}</td>
+                  {showClaimColumn && (
+                    <td className="px-4 py-3">
+                      {r.claim_or_request ? (
+                        <Badge variant="outline">{r.claim_or_request}</Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     {windows.find((window) => window.id === r.window_id)?.name ?? "Unknown"}
                   </td>

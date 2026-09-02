@@ -5,3 +5,5 @@ export const PRIORITY_TYPES = [
 ] as const;
 
 export const MINUTES_PER_SLOT = 3;
+
+export const CLAIM_OR_REQUEST_OPTIONS = ["Claim", "Request"] as const;

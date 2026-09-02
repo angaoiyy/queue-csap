@@ -38,8 +38,41 @@ export function LoginForm({
         password,
       });
       if (error) throw error;
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push("/dashboard/admin");
+
+      // Staff accounts must be approved by the super admin before they can use
+      // the dashboard. Block sign-in here for a clean message; the dashboard
+      // layout enforces the same rule for anyone who navigates in directly.
+      const { data: claimsData } = await supabase.auth.getClaims();
+      const userId = claimsData?.claims?.sub as string | undefined;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, status")
+          .eq("id", userId)
+          .maybeSingle();
+        if (
+          profile &&
+          profile.role !== "super_admin" &&
+          profile.status !== "approved"
+        ) {
+          await supabase.auth.signOut();
+          setError(
+            profile.status === "rejected"
+              ? "Your account request was declined. Contact the system administrator."
+              : "Your account is awaiting administrator approval. You'll be able to sign in once it's approved."
+          );
+          setIsLoading(false);
+          return;
+        }
+        if (profile?.role === "super_admin") {
+          router.push("/dashboard/staff");
+          return;
+        }
+      }
+
+      // /dashboard resolves the signed-in user's office and redirects them to
+      // /dashboard/<office>/admin.
+      router.push("/dashboard");
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
     } finally {

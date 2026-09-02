@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
+import { resolveOfficeId } from "@/lib/offices";
 
 export type SettingsTable =
   | "school_years"
@@ -12,12 +13,13 @@ export type SettingsTable =
   | "purpose_of_request_options";
 
 const TABLE_COLUMNS: Record<SettingsTable, string> = {
-  school_years: "id, label, sort_order, is_active",
-  departments: "id, label, requires_degree_program, sort_order, is_active",
-  inquiry_types: "id, label, prefix, requires_purpose, sort_order, is_active",
-  admission_inquiry_types: "id, label, prefix, requires_purpose, sort_order, is_active",
-  degree_programs: "id, label, department_id, sort_order, is_active",
-  purpose_of_request_options: "id, label, sort_order, is_active",
+  school_years: "id, label, sort_order, is_active, office_id",
+  departments: "id, label, requires_degree_program, sort_order, is_active, office_id",
+  inquiry_types: "id, label, prefix, requires_purpose, sort_order, is_active, office_id",
+  admission_inquiry_types:
+    "id, label, prefix, requires_purpose, sort_order, is_active, office_id",
+  degree_programs: "id, label, department_id, sort_order, is_active, office_id",
+  purpose_of_request_options: "id, label, sort_order, is_active, office_id",
 };
 
 export type SettingsItem = {
@@ -25,6 +27,7 @@ export type SettingsItem = {
   label: string;
   sort_order: number;
   is_active: boolean;
+  office_id: string;
   prefix?: string;
   requires_degree_program?: boolean;
   requires_purpose?: boolean;
@@ -42,15 +45,16 @@ export type SettingsActionResult = { success: true } | { success: false; error: 
 
 export async function listSettingsItems(
   table: SettingsTable,
-  options?: { activeOnly?: boolean }
+  options: { officeId: string; activeOnly?: boolean }
 ): Promise<SettingsItem[]> {
   noStore();
   const supabase = await createClient();
   let query = supabase
     .from(table)
     .select(TABLE_COLUMNS[table])
+    .eq("office_id", options.officeId)
     .order("sort_order", { ascending: true });
-  if (options?.activeOnly) {
+  if (options.activeOnly) {
     query = query.eq("is_active", true);
   }
   const { data, error } = await query;
@@ -60,7 +64,8 @@ export async function listSettingsItems(
 
 export async function createSettingsItem(
   table: SettingsTable,
-  input: SettingsItemInput
+  input: SettingsItemInput,
+  officeSlug: string
 ): Promise<SettingsActionResult> {
   const label = input.label.trim();
   if (!label) return { success: false, error: "Label is required" };
@@ -68,12 +73,18 @@ export async function createSettingsItem(
     return { success: false, error: "Prefix is required" };
   }
 
+  const officeId = await resolveOfficeId(officeSlug);
   const supabase = await createClient();
-  const existing = await listSettingsItems(table);
+  const existing = await listSettingsItems(table, { officeId });
   const nextOrder =
     existing.length > 0 ? Math.max(...existing.map((item) => item.sort_order)) + 1 : 0;
 
-  const row: Record<string, unknown> = { label, sort_order: nextOrder, is_active: true };
+  const row: Record<string, unknown> = {
+    label,
+    sort_order: nextOrder,
+    is_active: true,
+    office_id: officeId,
+  };
   if (table === "inquiry_types" || table === "admission_inquiry_types") {
     row.prefix = input.prefix!.trim().toUpperCase();
     row.requires_purpose = input.requires_purpose ?? false;
@@ -85,14 +96,15 @@ export async function createSettingsItem(
   const { error } = await supabase.from(table).insert(row);
   if (error) return { success: false, error: error.message };
 
-  revalidateSettings(table);
+  revalidateSettings(officeSlug);
   return { success: true };
 }
 
 export async function updateSettingsItem(
   table: SettingsTable,
   id: string,
-  input: SettingsItemInput
+  input: SettingsItemInput,
+  officeSlug: string
 ): Promise<SettingsActionResult> {
   const label = input.label.trim();
   if (!label) return { success: false, error: "Label is required" };
@@ -100,6 +112,7 @@ export async function updateSettingsItem(
     return { success: false, error: "Prefix is required" };
   }
 
+  const officeId = await resolveOfficeId(officeSlug);
   const row: Record<string, unknown> = { label };
   if (table === "inquiry_types" || table === "admission_inquiry_types") {
     row.prefix = input.prefix!.trim().toUpperCase();
@@ -110,46 +123,62 @@ export async function updateSettingsItem(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from(table).update(row).eq("id", id);
+  const { error } = await supabase
+    .from(table)
+    .update(row)
+    .eq("id", id)
+    .eq("office_id", officeId);
   if (error) return { success: false, error: error.message };
 
-  revalidateSettings(table);
+  revalidateSettings(officeSlug);
   return { success: true };
 }
 
 export async function setSettingsItemActive(
   table: SettingsTable,
   id: string,
-  is_active: boolean
+  is_active: boolean,
+  officeSlug: string
 ): Promise<SettingsActionResult> {
+  const officeId = await resolveOfficeId(officeSlug);
   const supabase = await createClient();
-  const { error } = await supabase.from(table).update({ is_active }).eq("id", id);
+  const { error } = await supabase
+    .from(table)
+    .update({ is_active })
+    .eq("id", id)
+    .eq("office_id", officeId);
   if (error) return { success: false, error: error.message };
 
-  revalidateSettings(table);
+  revalidateSettings(officeSlug);
   return { success: true };
 }
 
 export async function reorderSettingsItems(
   table: SettingsTable,
-  orderedIds: string[]
+  orderedIds: string[],
+  officeSlug: string
 ): Promise<SettingsActionResult> {
+  const officeId = await resolveOfficeId(officeSlug);
   const supabase = await createClient();
   const results = await Promise.all(
     orderedIds.map((id, index) =>
-      supabase.from(table).update({ sort_order: index }).eq("id", id)
+      supabase
+        .from(table)
+        .update({ sort_order: index })
+        .eq("id", id)
+        .eq("office_id", officeId)
     )
   );
   const failed = results.find((result) => result.error);
   if (failed?.error) return { success: false, error: failed.error.message };
 
-  revalidateSettings(table);
+  revalidateSettings(officeSlug);
   return { success: true };
 }
 
-function revalidateSettings(_table: SettingsTable) {
-  revalidatePath("/dashboard/settings");
-  revalidatePath("/reserve");
-  revalidatePath("/reserve/old");
-  revalidatePath("/reserve/new");
+function revalidateSettings(slug: string) {
+  revalidatePath(`/dashboard/${slug}/settings`);
+  revalidatePath(`/${slug}/reserve`);
+  revalidatePath(`/${slug}/reserve/old`);
+  revalidatePath(`/${slug}/reserve/new`);
 }

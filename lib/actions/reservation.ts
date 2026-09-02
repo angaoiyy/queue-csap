@@ -2,13 +2,23 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
-import { PRIORITY_TYPES, MINUTES_PER_SLOT } from "@/lib/constants";
+import {
+  PRIORITY_TYPES,
+  MINUTES_PER_SLOT,
+  CLAIM_OR_REQUEST_OPTIONS,
+} from "@/lib/constants";
 import { listSettingsItems } from "@/lib/actions/settings";
 import { printReservationTicket } from "@/lib/printer/ticket";
 import { getDisplaySettings } from "@/lib/actions/display-settings";
+import {
+  resolveOfficeId,
+  getOfficeBySlug,
+  getSessionOffice,
+} from "@/lib/offices";
 
 export type Reservation = {
   id: string;
+  office_id: string;
   student_name: string;
   student_id: string | null;
   department: string;
@@ -16,6 +26,7 @@ export type Reservation = {
   term_school_year: string;
   inquiry_type: string;
   purpose_of_request: string | null;
+  claim_or_request: string | null;
   priority_type: string | null;
   is_priority: boolean;
   application_type: "old" | "new";
@@ -33,6 +44,7 @@ export type QueueWindow = {
   id: string;
   name: string;
   is_active: boolean;
+  office_id: string;
 };
 
 export type WindowActionResult = { success: true } | { success: false; error: string };
@@ -43,6 +55,7 @@ export type ActivityAction =
   | "window_count_changed";
 
 export type CreateReservationInput = {
+  office_slug: string;
   application_type: "old" | "new";
   student_name: string;
   student_id?: string;
@@ -51,6 +64,7 @@ export type CreateReservationInput = {
   term_school_year: string;
   inquiry_type: string;
   purpose_of_request?: string;
+  claim_or_request?: string;
   priority_type?: string;
 };
 
@@ -63,7 +77,14 @@ export async function createReservation(
 ): Promise<CreateReservationResult> {
   const supabase = await createClient();
   const manilaToday = getManilaDateString();
-  const activeWindows = await getWindows();
+
+  const office = await getOfficeBySlug(input.office_slug);
+  if (!office) {
+    return { success: false, error: "Invalid office" };
+  }
+  const officeId = office.id;
+
+  const activeWindows = await getWindows(officeId);
   if (activeWindows.length === 0) {
     return { success: false, error: "No active windows configured for today" };
   }
@@ -72,8 +93,8 @@ export async function createReservation(
   const inquiryTable = isOld ? "inquiry_types" : "admission_inquiry_types";
 
   const [inquiryTypes, departments] = await Promise.all([
-    listSettingsItems(inquiryTable, { activeOnly: true }),
-    listSettingsItems("departments", { activeOnly: true }),
+    listSettingsItems(inquiryTable, { activeOnly: true, officeId }),
+    listSettingsItems("departments", { activeOnly: true, officeId }),
   ]);
 
   const inquiryTypeConfig = inquiryTypes.find(
@@ -110,9 +131,20 @@ export async function createReservation(
     return { success: false, error: "Invalid priority type" };
   }
 
+  const claimOrRequest = input.claim_or_request?.trim() || null;
+  if (office.requires_claim_request) {
+    if (!claimOrRequest) {
+      return { success: false, error: "Please select Claim or Request" };
+    }
+    if (!(CLAIM_OR_REQUEST_OPTIONS as readonly string[]).includes(claimOrRequest)) {
+      return { success: false, error: "Invalid Claim or Request value" };
+    }
+  }
+
   const { count, error: countError } = await supabase
     .from("reservations")
     .select("*", { count: "exact", head: true })
+    .eq("office_id", officeId)
     .eq("queue_date", manilaToday)
     .eq("inquiry_type", input.inquiry_type)
     .eq("application_type", input.application_type)
@@ -124,11 +156,12 @@ export async function createReservation(
 
   const position = (count ?? 0) + 1;
   const queue_number = `${inquiryTypeConfig.prefix}${position.toString().padStart(3, "0")}`;
-  const assignedWindow = await pickWindowForNewReservation(activeWindows);
+  const assignedWindow = await pickWindowForNewReservation(activeWindows, officeId);
 
   const { data, error } = await supabase
     .from("reservations")
     .insert({
+      office_id: officeId,
       student_name: input.student_name,
       student_id: isOld ? input.student_id : null,
       department: input.department,
@@ -141,6 +174,7 @@ export async function createReservation(
         isOld && inquiryTypeConfig.requires_purpose
           ? input.purpose_of_request?.trim() || null
           : null,
+      claim_or_request: office.requires_claim_request ? claimOrRequest : null,
       priority_type: priorityType,
       application_type: input.application_type,
       queue_number,
@@ -156,18 +190,22 @@ export async function createReservation(
     return { success: false, error: error.message };
   }
 
-  revalidatePath("/reserve");
-  revalidatePath("/reserve/confirmation");
-  revalidatePath("/display");
-  revalidatePath("/dashboard/admin");
+  revalidatePath(`/${input.office_slug}/reserve`);
+  revalidatePath(`/${input.office_slug}/reserve/confirmation`);
+  revalidatePath(`/${input.office_slug}/display`);
+  revalidatePath(`/dashboard/${input.office_slug}/admin`);
 
   await logActivity({
     action: "reservation_created",
+    office_id: officeId,
     entity_type: "reservation",
     entity_id: (data as Reservation).id,
     metadata: {
+      office_id: officeId,
+      office_slug: input.office_slug,
       queue_number: (data as Reservation).queue_number,
       inquiry_type: input.inquiry_type,
+      claim_or_request: office.requires_claim_request ? claimOrRequest : null,
       priority_type: priorityType,
       window_id: assignedWindow.id,
       window_name: assignedWindow.name,
@@ -189,6 +227,7 @@ export async function createReservation(
       studentId: reservation.student_id ?? "",
       department: reservation.department,
       inquiryType: reservation.inquiry_type,
+      claimOrRequest: reservation.claim_or_request ?? "",
       windowName: assignedWindow.name,
       position: reservation.position,
       estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
@@ -215,15 +254,26 @@ export type StudentLookupResult = {
   degree_program: string | null;
 } | null;
 
-export async function lookupStudent(query: string): Promise<StudentLookupResult> {
+export async function lookupStudent(
+  officeSlug: string,
+  query: string
+): Promise<StudentLookupResult> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return null;
+
+  let officeId: string;
+  try {
+    officeId = await resolveOfficeId(officeSlug);
+  } catch {
+    return null;
+  }
 
   const escaped = escapeForIlike(trimmed);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("reservations")
     .select("student_name, student_id, department, degree_program, created_at")
+    .eq("office_id", officeId)
     .eq("application_type", "old")
     .or(`student_id.ilike.%${escaped}%,student_name.ilike.%${escaped}%`)
     .order("created_at", { ascending: false })
@@ -233,8 +283,8 @@ export async function lookupStudent(query: string): Promise<StudentLookupResult>
   if (error || !data) return null;
 
   const [departments, degreePrograms] = await Promise.all([
-    listSettingsItems("departments", { activeOnly: true }),
-    listSettingsItems("degree_programs", { activeOnly: true }),
+    listSettingsItems("departments", { activeOnly: true, officeId }),
+    listSettingsItems("degree_programs", { activeOnly: true, officeId }),
   ]);
 
   const degree_program = degreePrograms.some((d) => d.label === data.degree_program)
@@ -265,13 +315,14 @@ function escapeForIlike(value: string): string {
   return value.replace(/[%_,]/g, (char) => `\\${char}`);
 }
 
-export async function getActiveQueue() {
+export async function getActiveQueue(officeId: string) {
   noStore();
   const supabase = await createClient();
   const manilaToday = getManilaDateString();
   const { data, error } = await supabase
     .from("reservations")
     .select("*")
+    .eq("office_id", officeId)
     .eq("queue_date", manilaToday)
     .in("status", ["waiting", "serving"])
     .order("is_priority", { ascending: false })
@@ -281,13 +332,14 @@ export async function getActiveQueue() {
   return data as Reservation[];
 }
 
-export async function getSkippedQueue() {
+export async function getSkippedQueue(officeId: string) {
   noStore();
   const supabase = await createClient();
   const manilaToday = getManilaDateString();
   const { data, error } = await supabase
     .from("reservations")
     .select("*")
+    .eq("office_id", officeId)
     .eq("queue_date", manilaToday)
     .eq("status", "skipped")
     .order("called_at", { ascending: false });
@@ -336,12 +388,13 @@ export type ActivityAnalytics = {
   processedByWindow: Array<{ windowName: string; count: number }>;
 };
 
-export async function getDisplayData(): Promise<DisplayData> {
+export async function getDisplayData(officeSlug: string): Promise<DisplayData> {
   noStore();
-  const windows = await getWindows();
-  const queue = await getActiveQueue();
-  const skippedQueue = await getSkippedQueue();
-  const displaySettings = await getDisplaySettings();
+  const officeId = await resolveOfficeId(officeSlug);
+  const windows = await getWindows(officeId);
+  const queue = await getActiveQueue(officeId);
+  const skippedQueue = await getSkippedQueue(officeId);
+  const displaySettings = await getDisplaySettings(officeId);
 
   return {
     nowServingByWindow: windows.map((window) => {
@@ -397,33 +450,39 @@ export async function getDisplayData(): Promise<DisplayData> {
 }
 
 export async function getActivityAnalytics(input: {
+  officeSlug: string;
   fromISO: string;
   toISO: string;
   windowId?: string;
 }): Promise<ActivityAnalytics> {
   noStore();
   const supabase = await createClient();
+  const officeId = await resolveOfficeId(input.officeSlug);
   const windowId = input.windowId?.trim() || "";
 
   let createdQuery = supabase
     .from("reservations")
     .select("id", { count: "exact", head: true })
+    .eq("office_id", officeId)
     .gte("created_at", input.fromISO)
     .lte("created_at", input.toISO);
   let processedQuery = supabase
     .from("reservations")
     .select("id", { count: "exact", head: true })
+    .eq("office_id", officeId)
     .in("status", ["completed", "skipped"])
     .gte("created_at", input.fromISO)
     .lte("created_at", input.toISO);
   let liveQuery = supabase
     .from("reservations")
     .select("status")
+    .eq("office_id", officeId)
     .eq("queue_date", getManilaDateString())
     .in("status", ["waiting", "serving"]);
   let actionsQuery = supabase
     .from("activity_logs")
     .select("action, metadata")
+    .eq("office_id", officeId)
     .gte("created_at", input.fromISO)
     .lte("created_at", input.toISO);
 
@@ -446,7 +505,7 @@ export async function getActivityAnalytics(input: {
     actionsMap.set(row.action, (actionsMap.get(row.action) ?? 0) + 1);
   });
 
-  const windows = await getAllWindows();
+  const windows = await getAllWindows(officeId);
   const windowNameById = new Map(windows.map((w) => [w.id, w.name]));
   const processedByWindowMap = new Map<string, number>();
   (actionsData ?? []).forEach((row) => {
@@ -478,12 +537,13 @@ export async function getActivityAnalytics(input: {
 
 export type CallNextResult = { success: true } | { success: false; error: string };
 
-export async function getWindows(): Promise<QueueWindow[]> {
+export async function getWindows(officeId: string): Promise<QueueWindow[]> {
   noStore();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("windows")
-    .select("id, name, is_active")
+    .select("id, name, is_active, office_id")
+    .eq("office_id", officeId)
     .eq("is_active", true)
     .order("name", { ascending: true });
 
@@ -493,12 +553,13 @@ export async function getWindows(): Promise<QueueWindow[]> {
   return data as QueueWindow[];
 }
 
-export async function getAllWindows(): Promise<QueueWindow[]> {
+export async function getAllWindows(officeId: string): Promise<QueueWindow[]> {
   noStore();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("windows")
-    .select("id, name, is_active")
+    .select("id, name, is_active, office_id")
+    .eq("office_id", officeId)
     .order("name", { ascending: true });
 
   if (error) {
@@ -507,7 +568,10 @@ export async function getAllWindows(): Promise<QueueWindow[]> {
   return data as QueueWindow[];
 }
 
-export async function setAvailableWindowCount(count: number): Promise<WindowActionResult> {
+export async function setAvailableWindowCount(
+  officeSlug: string,
+  count: number
+): Promise<WindowActionResult> {
   if (!Number.isInteger(count) || count <= 0) {
     return { success: false, error: "Window count must be at least 1" };
   }
@@ -515,22 +579,28 @@ export async function setAvailableWindowCount(count: number): Promise<WindowActi
     return { success: false, error: "Window count cannot exceed 20" };
   }
 
+  const session = await getSessionOffice();
+  if (!session || session.slug !== officeSlug) {
+    return { success: false, error: "Forbidden" };
+  }
+  const officeId = session.id;
+
   const supabase = await createClient();
-  const beforeCount = (await getWindows()).length;
-  let allWindows = await getAllWindows();
+  const beforeCount = (await getWindows(officeId)).length;
+  let allWindows = await getAllWindows(officeId);
 
   if (allWindows.length < count) {
     const inserts = [];
     for (let i = allWindows.length + 1; i <= count; i += 1) {
-      inserts.push({ name: `Window ${i}`, is_active: true });
+      inserts.push({ name: `Window ${i}`, is_active: true, office_id: officeId });
     }
     const { error: insertError } = await supabase
       .from("windows")
-      .upsert(inserts, { onConflict: "name" });
+      .upsert(inserts, { onConflict: "office_id,name" });
     if (insertError) {
       return { success: false, error: insertError.message };
     }
-    allWindows = await getAllWindows();
+    allWindows = await getAllWindows(officeId);
   }
 
   const ordered = [...allWindows].sort(
@@ -558,19 +628,24 @@ export async function setAvailableWindowCount(count: number): Promise<WindowActi
     }
   }
 
-  const { error: rebalanceError } = await supabase.rpc("rebalance_waiting_tickets");
+  const { error: rebalanceError } = await supabase.rpc("rebalance_waiting_tickets", {
+    p_office_id: officeId,
+  });
   if (rebalanceError) {
     return { success: false, error: rebalanceError.message };
   }
 
-  revalidatePath("/dashboard/admin");
-  revalidatePath("/display");
+  revalidatePath(`/dashboard/${officeSlug}/admin`);
+  revalidatePath(`/${officeSlug}/display`);
 
   await logActivity({
     action: "window_count_changed",
+    office_id: officeId,
     entity_type: "window",
     entity_id: "windows",
     metadata: {
+      office_id: officeId,
+      office_slug: officeSlug,
       previous_count: beforeCount,
       new_count: count,
       active_window_ids: activeIds,
@@ -580,14 +655,30 @@ export async function setAvailableWindowCount(count: number): Promise<WindowActi
   return { success: true };
 }
 
-export async function getWindowQueue(windowId: string): Promise<Reservation[]> {
-  const queue = await getActiveQueue();
+export async function getWindowQueue(
+  officeId: string,
+  windowId: string
+): Promise<Reservation[]> {
+  const queue = await getActiveQueue(officeId);
   return queue.filter((reservation) => reservation.window_id === windowId);
 }
 
-async function dispatchWindow(windowId: string, mode: "call_next" | "skip_current") {
+async function dispatchWindow(
+  officeSlug: string,
+  windowId: string,
+  mode: "call_next" | "skip_current"
+) {
+  const session = await getSessionOffice();
+  if (!session || session.slug !== officeSlug) {
+    return { success: false as const, error: "Forbidden" };
+  }
+
   const supabase = await createClient();
   const window = await getWindowById(windowId);
+  if (!window || window.office_id !== session.id) {
+    return { success: false as const, error: "Window does not belong to this office" };
+  }
+
   const { error } = await supabase.rpc("dispatch_window_queue", {
     p_window_id: windowId,
     p_mode: mode,
@@ -597,8 +688,8 @@ async function dispatchWindow(windowId: string, mode: "call_next" | "skip_curren
     return { success: false as const, error: error.message };
   }
 
-  revalidatePath("/display");
-  revalidatePath("/dashboard/admin");
+  revalidatePath(`/${officeSlug}/display`);
+  revalidatePath(`/dashboard/${officeSlug}/admin`);
 
   const { data: servingData } = await supabase
     .from("reservations")
@@ -611,9 +702,12 @@ async function dispatchWindow(windowId: string, mode: "call_next" | "skip_curren
 
   await logActivity({
     action: mode === "call_next" ? "call_next" : "skip_ticket",
+    office_id: session.id,
     entity_type: "window",
     entity_id: windowId,
     metadata: {
+      office_id: session.id,
+      office_slug: officeSlug,
       window_id: windowId,
       window_name: window?.name ?? "Unknown Window",
       now_serving_queue: servingData?.queue_number ?? null,
@@ -625,13 +719,17 @@ async function dispatchWindow(windowId: string, mode: "call_next" | "skip_curren
   return { success: true as const };
 }
 
-async function pickWindowForNewReservation(windows: QueueWindow[]): Promise<QueueWindow> {
+async function pickWindowForNewReservation(
+  windows: QueueWindow[],
+  officeId: string
+): Promise<QueueWindow> {
   const supabase = await createClient();
   const manilaToday = getManilaDateString();
   const windowIds = windows.map((window) => window.id);
   const { data, error } = await supabase
     .from("reservations")
     .select("window_id")
+    .eq("office_id", officeId)
     .eq("queue_date", manilaToday)
     .in("status", ["waiting", "serving"])
     .in("window_id", windowIds);
@@ -673,7 +771,7 @@ async function getWindowById(windowId: string): Promise<QueueWindow | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("windows")
-    .select("id, name, is_active")
+    .select("id, name, is_active, office_id")
     .eq("id", windowId)
     .maybeSingle();
   if (error) return null;
@@ -682,6 +780,7 @@ async function getWindowById(windowId: string): Promise<QueueWindow | null> {
 
 async function logActivity(input: {
   action: ActivityAction;
+  office_id?: string | null;
   entity_type?: string | null;
   entity_id?: string | null;
   metadata?: Record<string, unknown>;
@@ -693,6 +792,7 @@ async function logActivity(input: {
 
     const { error } = await supabase.from("activity_logs").insert({
       action: input.action,
+      office_id: input.office_id ?? null,
       actor_user_id: claims?.sub ?? null,
       actor_email: claims?.email ?? null,
       entity_type: input.entity_type ?? null,
@@ -706,23 +806,29 @@ async function logActivity(input: {
   }
 }
 
-export async function callNextReservation(windowId: string): Promise<CallNextResult> {
+export async function callNextReservation(
+  officeSlug: string,
+  windowId: string
+): Promise<CallNextResult> {
   if (!windowId) {
     return { success: false, error: "Window is required" };
   }
 
-  const result = await dispatchWindow(windowId, "call_next");
+  const result = await dispatchWindow(officeSlug, windowId, "call_next");
   if (!result.success) return result;
 
   return { success: true };
 }
 
-export async function skipCurrentReservation(windowId: string): Promise<CallNextResult> {
+export async function skipCurrentReservation(
+  officeSlug: string,
+  windowId: string
+): Promise<CallNextResult> {
   if (!windowId) {
     return { success: false, error: "Window is required" };
   }
 
-  const result = await dispatchWindow(windowId, "skip_current");
+  const result = await dispatchWindow(officeSlug, windowId, "skip_current");
   if (!result.success) return result;
 
   return { success: true };

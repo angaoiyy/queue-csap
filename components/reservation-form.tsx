@@ -26,22 +26,30 @@ import {
   type CreateReservationInput,
 } from "@/lib/actions/reservation";
 import type { SettingsItem } from "@/lib/actions/settings";
-import { PRIORITY_TYPES, MINUTES_PER_SLOT } from "@/lib/constants";
+import {
+  PRIORITY_TYPES,
+  MINUTES_PER_SLOT,
+  CLAIM_OR_REQUEST_OPTIONS,
+} from "@/lib/constants";
 
 type ReservationFormProps = {
+  officeSlug: string;
   departments: SettingsItem[];
   degreePrograms: SettingsItem[];
   termsSchoolYear: SettingsItem[];
   inquiryTypes: SettingsItem[];
   purposeOptions: SettingsItem[];
+  requiresClaimRequest: boolean;
 };
 
 export function ReservationForm({
+  officeSlug,
   departments,
   degreePrograms,
   termsSchoolYear,
   inquiryTypes,
   purposeOptions,
+  requiresClaimRequest,
 }: ReservationFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
@@ -49,6 +57,7 @@ export function ReservationForm({
   const [error, setError] = useState<string | null>(null);
   const [wasAutofilled, setWasAutofilled] = useState(false);
   const [formData, setFormData] = useState<CreateReservationInput>({
+    office_slug: officeSlug,
     application_type: "old",
     student_name: "",
     student_id: "",
@@ -57,6 +66,7 @@ export function ReservationForm({
     term_school_year: "",
     inquiry_type: "",
     purpose_of_request: "",
+    claim_or_request: "",
     priority_type: "",
   });
   const [purposeSelection, setPurposeSelection] = useState("");
@@ -72,7 +82,7 @@ export function ReservationForm({
     const seq = ++lookupSeq.current;
     setIsLookingUp(true);
     try {
-      const result = await lookupStudent(trimmed);
+      const result = await lookupStudent(officeSlug, trimmed);
       if (!result || seq !== lookupSeq.current) return;
       setFormData((prev) => {
         const next = {
@@ -120,6 +130,7 @@ export function ReservationForm({
           studentId: r.student_id ?? "",
           department: r.department,
           inquiryType: r.inquiry_type,
+          claimOrRequest: r.claim_or_request ?? "",
           window: r.window_name ?? "",
           position: String(r.position),
           wait: String(estimatedMinutes),
@@ -127,6 +138,7 @@ export function ReservationForm({
           ...(result.printError ? { printError: result.printError } : {}),
         });
         setFormData({
+          office_slug: officeSlug,
           application_type: "old",
           student_name: "",
           student_id: "",
@@ -143,7 +155,7 @@ export function ReservationForm({
         touchedRef.current = new Set();
         lookupSeq.current += 1;
         setWasAutofilled(false);
-        router.push(`/reserve/confirmation?${params.toString()}`);
+        router.push(`/${officeSlug}/reserve/confirmation?${params.toString()}`);
       } else {
         setError(result.error);
       }
@@ -306,6 +318,30 @@ export function ReservationForm({
               </SelectContent>
             </Select>
           </div>
+
+          {requiresClaimRequest && (
+            <div className="grid gap-2">
+              <Label>Claim or Request?</Label>
+              <Select
+                required
+                value={formData.claim_or_request}
+                onValueChange={(v) =>
+                  setFormData((prev) => ({ ...prev, claim_or_request: v }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLAIM_OR_REQUEST_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {inquiryTypes.find((type) => type.label === formData.inquiry_type)
             ?.requires_purpose && (

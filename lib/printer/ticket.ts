@@ -25,6 +25,7 @@ export type TicketData = {
   studentId: string;
   department: string;
   inquiryType: string;
+  claimOrRequest: string;
   windowName: string;
   position: number;
   estimatedMinutes: number;
@@ -98,6 +99,9 @@ function buildTicketBuffer(ticket: TicketData): Buffer {
   // printer.println(`Student ID: ${ticket.studentId}`);
   // printer.println(`Department: ${ticket.department}`);
   // printer.println(`Inquiry Type: ${ticket.inquiryType}`);
+  if (ticket.claimOrRequest) {
+    printer.println(`Transaction: ${ticket.claimOrRequest}`);
+  }
   printer.println(`Window: ${ticket.windowName || "To be announced"}`);
   // printer.println(`Position in line: ${ticket.position}`);
   // printer.println(`Estimated wait: ~${ticket.estimatedMinutes} min`);
