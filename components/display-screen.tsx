@@ -9,6 +9,12 @@ import Image from "next/image";
 
 const INSTITUTION = "Colegio de San Antonio de Padua";
 
+type RecallPayload = {
+  queueNumber?: string;
+  windowName?: string;
+  studentName?: string | null;
+};
+
 function useClock() {
   const [time, setTime] = useState("");
   const [date, setDate] = useState("");
@@ -52,12 +58,22 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
   const { time, date } = useClock();
   const lastServingRef = useRef<Map<string, string>>(new Map());
   const isFirstLoadRef = useRef(true);
+  const audioEnabledRef = useRef(false);
+  const audioSettingRef = useRef(false);
 
   useEffect(() => {
     if (sessionStorage.getItem(audioKey) === "true") {
       setAudioEnabled(true);
     }
   }, [audioKey]);
+
+  useEffect(() => {
+    audioEnabledRef.current = audioEnabled;
+  }, [audioEnabled]);
+
+  useEffect(() => {
+    audioSettingRef.current = data?.audioEnabled ?? false;
+  }, [data?.audioEnabled]);
 
   const enableAudio = () => {
     unlockSpeech();
@@ -109,6 +125,30 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
       supabase.removeChannel(channel);
     };
   }, [officeSlug, officeId]);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`queue-recall-${officeSlug}`)
+      .on(
+        "broadcast",
+        { event: "recall" },
+        ({ payload }: { payload: RecallPayload }) => {
+          if (!audioEnabledRef.current || !audioSettingRef.current) return;
+          if (!payload?.queueNumber || !payload?.windowName) return;
+          speakNowServing(
+            payload.queueNumber,
+            payload.windowName,
+            payload.studentName ?? undefined,
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [officeSlug]);
 
   useEffect(() => {
     if (!data) return;

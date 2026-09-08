@@ -29,10 +29,7 @@ async function OfficeGrid() {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {offices.map((office) => (
-        <Card
-          key={office.slug}
-          className="transition-shadow hover:shadow-md"
-        >
+        <Card key={office.slug} className="transition-shadow hover:shadow-md">
           <CardHeader>
             <CardTitle>{office.label}</CardTitle>
             <CardDescription>
@@ -60,8 +57,14 @@ export default function Home() {
         <nav className="w-full flex justify-center border-b border-b-foreground/10 h-16">
           <div className="w-full max-w-5xl flex justify-between items-center p-3 px-5 text-sm">
             <div className="flex gap-5 items-center font-semibold">
-              <Image src="/csap.png" alt="CSAP Logo" width={32} height={32} className="object-contain" />
-              <Link href={"/"}>CSAP</Link>
+              <Image
+                src="/csap.png"
+                alt="CSAP Logo"
+                width={32}
+                height={32}
+                className="object-contain"
+              />
+              <Link href={"/"}> Colegio de San Antonio de Padua</Link>
             </div>
             {!hasEnvVars ? (
               <EnvVarWarning />
@@ -81,13 +84,22 @@ export default function Home() {
         >
           <div className="w-full max-w-3xl px-5 md:px-6 flex flex-col gap-8">
             <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold md:text-3xl">Choose an office</h2>
+              <h2 className="text-2xl font-bold md:text-3xl">
+                Choose an office
+              </h2>
               <p className="text-muted-foreground">
-                Pick an office to reserve a queue number or view its display screen.
+                Pick an office to reserve a queue number or view its display
+                screen.
               </p>
             </div>
 
-            <Suspense fallback={<div className="p-12 text-center text-muted-foreground">Loading offices…</div>}>
+            <Suspense
+              fallback={
+                <div className="p-12 text-center text-muted-foreground">
+                  Loading offices…
+                </div>
+              }
+            >
               <OfficeGrid />
             </Suspense>
           </div>

@@ -13,7 +13,16 @@ const FEATURES = [
 
 export function LandingHero() {
   return (
-    <section className="w-full border-b border-b-foreground/10 bg-primary/[0.04]">
+    <section className="relative w-full overflow-hidden border-b border-b-foreground/10">
+      <Image
+        src="/csap-bg1.jpg"
+        alt=""
+        fill
+        priority
+        sizes="100vw"
+        className="object-cover object-center -z-10"
+      />
+      <div className="absolute inset-0 -z-10 bg-background/85 dark:bg-background/80" />
       <div className="mx-auto grid w-full max-w-5xl items-center gap-10 px-5 py-14 md:grid-cols-2 md:px-6 md:py-20">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -58,7 +67,7 @@ export function LandingHero() {
           className="relative aspect-[4/3] overflow-hidden rounded-xl border shadow-lg"
         >
           <Image
-            src="/hero-school.png"
+            src="/csap-bg2.jpg"
             alt="Colegio de San Antonio de Padua — Durano Campus"
             fill
             priority

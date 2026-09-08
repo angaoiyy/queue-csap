@@ -55,6 +55,11 @@ export default function ReserveOldPage({
 }) {
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center p-6">
+      <div
+        className="fixed inset-0 -z-10 bg-cover bg-center"
+        style={{ backgroundImage: "url('/csap-bg2.jpg')" }}
+      />
+      <div className="fixed inset-0 -z-10 bg-background/70 backdrop-blur-sm" />
       <div className="mb-8 text-center flex items-center gap-2 justify-center flex-col">
         <ReserveLogoLink />
       </div>

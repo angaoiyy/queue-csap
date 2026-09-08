@@ -6,6 +6,11 @@ function formatQueueNumber(queueNumber: string): string {
 // Falls back to a generated two-tone beep if the file is missing.
 const CHIME_SRC = "/chime.mp3";
 
+// chime.mp3 is ~5s. Cap playback so the chime is at least 2s shorter, with a
+// short fade so cutting it off does not click.
+const CHIME_MAX_SECONDS = 2.6;
+const CHIME_FADE_SECONDS = 0.15;
+
 let chimeAudio: HTMLAudioElement | null = null;
 let chimeAudioFailed = false;
 
@@ -21,6 +26,9 @@ function playCustomChime(): Promise<boolean> {
     }
     const audio = chimeAudio;
 
+    let fadeTimer = 0;
+    let stopTimer = 0;
+
     const onEnded = () => {
       cleanup();
       resolve(true);
@@ -31,6 +39,8 @@ function playCustomChime(): Promise<boolean> {
       resolve(false);
     };
     const cleanup = () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(stopTimer);
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
     };
@@ -39,11 +49,26 @@ function playCustomChime(): Promise<boolean> {
     audio.addEventListener("error", onError);
 
     audio.currentTime = 0;
+    audio.volume = 1;
     audio.play().catch(() => {
       chimeAudioFailed = true;
       cleanup();
       resolve(false);
     });
+
+    fadeTimer = window.setTimeout(
+      () => {
+        audio.volume = 0.001;
+      },
+      (CHIME_MAX_SECONDS - CHIME_FADE_SECONDS) * 1000,
+    );
+    stopTimer = window.setTimeout(() => {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = 1;
+      cleanup();
+      resolve(true);
+    }, CHIME_MAX_SECONDS * 1000);
   });
 }
 

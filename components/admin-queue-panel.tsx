@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import {
   callNextReservation,
@@ -44,6 +45,8 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
   const [queue, setQueue] = useState<Reservation[]>([]);
   const [isCalling, setIsCalling] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
+  const [isRecalling, setIsRecalling] = useState(false);
+  const recallChannelRef = useRef<RealtimeChannel | null>(null);
   const [isSavingWindowCount, setIsSavingWindowCount] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoUrlInput, setVideoUrlInput] = useState("");
@@ -197,6 +200,17 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeId]);
 
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase.channel(`queue-recall-${officeSlug}`);
+    channel.subscribe();
+    recallChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      recallChannelRef.current = null;
+    };
+  }, [officeSlug]);
+
   const handleCallNext = async () => {
     if (!selectedWindowId) {
       setError("Select a window first");
@@ -213,6 +227,33 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
     setIsCalling(false);
   };
 
+  const callNextRef = useRef(handleCallNext);
+  callNextRef.current = handleCallNext;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || event.repeat) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        tag === "BUTTON" ||
+        target?.isContentEditable ||
+        target?.getAttribute("role") === "combobox"
+      ) {
+        return;
+      }
+      if (isCalling || isSkipping || isRecalling) return;
+      event.preventDefault();
+      void callNextRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isCalling, isSkipping, isRecalling]);
+
   const handleSkipCurrent = async () => {
     if (!selectedWindowId) {
       setError("Select a window first");
@@ -227,6 +268,39 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
       setError(result.error);
     }
     setIsSkipping(false);
+  };
+
+  const handleRecall = async () => {
+    if (!selectedWindowId) {
+      setError("Select a window first");
+      return;
+    }
+    if (!nowServing) {
+      setError("No number is being served at this window yet");
+      return;
+    }
+    const channel = recallChannelRef.current;
+    if (!channel) {
+      setError("Recall channel not ready, try again");
+      return;
+    }
+    setIsRecalling(true);
+    setError(null);
+    try {
+      await channel.send({
+        type: "broadcast",
+        event: "recall",
+        payload: {
+          windowId: selectedWindowId,
+          queueNumber: nowServing.queue_number,
+          windowName: selectedWindow?.name ?? "",
+          studentName: nowServing.student_name ?? null,
+        },
+      });
+    } catch {
+      setError("Could not send recall");
+    }
+    setIsRecalling(false);
   };
 
   const handleSaveWindowCount = async () => {
@@ -323,12 +397,24 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
           </Select>
           <Button
             variant="outline"
+            onClick={handleRecall}
+            disabled={isCalling || isSkipping || isRecalling || !nowServing}
+            title="Re-announce the number currently being served on the display"
+          >
+            {isRecalling ? "Recalling..." : "Recall"}
+          </Button>
+          <Button
+            variant="outline"
             onClick={handleSkipCurrent}
-            disabled={isSkipping || isCalling}
+            disabled={isSkipping || isCalling || isRecalling}
           >
             {isSkipping ? "Skipping..." : "Skip"}
           </Button>
-          <Button onClick={handleCallNext} disabled={isCalling || isSkipping}>
+          <Button
+            onClick={handleCallNext}
+            disabled={isCalling || isSkipping || isRecalling}
+            title="Press Enter to call next"
+          >
             {isCalling ? "Calling..." : "Call Next"}
           </Button>
         </div>
