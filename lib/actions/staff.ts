@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import {
-  getSessionProfile,
+  requireSuperAdmin,
   type StaffRole,
   type StaffStatus,
 } from "@/lib/offices";
@@ -19,14 +19,6 @@ export type StaffProfile = {
 };
 
 export type StaffActionResult = { success: true } | { success: false; error: string };
-
-async function requireSuperAdmin() {
-  const profile = await getSessionProfile();
-  if (!profile || profile.role !== "super_admin") {
-    throw new Error("Forbidden");
-  }
-  return profile;
-}
 
 export async function listStaffProfiles(): Promise<StaffProfile[]> {
   noStore();

@@ -106,6 +106,14 @@ export const getSessionProfile = cache(
   }
 );
 
+export async function requireSuperAdmin(): Promise<SessionProfile> {
+  const profile = await getSessionProfile();
+  if (!profile || profile.role !== "super_admin") {
+    throw new Error("Forbidden");
+  }
+  return profile;
+}
+
 export const getSessionOffice = cache(
   async (): Promise<SessionOffice | null> => {
     const profile = await getSessionProfile();

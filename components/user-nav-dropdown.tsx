@@ -64,6 +64,11 @@ export function UserNavDropdown({
             <Link href="/dashboard/staff">Staff Approvals</Link>
           </DropdownMenuItem>
         )}
+        {role === "super_admin" && (
+          <DropdownMenuItem asChild>
+            <Link href="/dashboard/messages">Messages</Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <Link href={`${base}/admin`}>Admin Panel</Link>
         </DropdownMenuItem>

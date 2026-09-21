@@ -1,6 +1,7 @@
 import { EnvVarWarning } from "@/components/env-var-warning";
 import { AuthButton } from "@/components/auth-button";
 import { LandingHero } from "@/components/landing-hero";
+import { ContactSection } from "@/components/contact-section";
 import { hasEnvVars } from "@/lib/utils";
 import { getAllOffices } from "@/lib/offices";
 import Link from "next/link";
@@ -104,6 +105,8 @@ export default function Home() {
             </Suspense>
           </div>
         </section>
+
+        <ContactSection />
 
         <footer className="w-full flex items-center justify-center border-t mx-auto text-center text-xs gap-8 py-16">
           All rights reserved &copy; 2026 CSAP.

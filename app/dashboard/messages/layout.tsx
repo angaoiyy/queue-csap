@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { SuperAdminGuard } from "@/components/super-admin-guard";
 
-export default function StaffApprovalsLayout({
+export default function MessagesLayout({
   children,
 }: {
   children: React.ReactNode;

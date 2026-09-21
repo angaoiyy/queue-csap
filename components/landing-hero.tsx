@@ -48,6 +48,9 @@ export function LandingHero() {
             <Button asChild size="lg">
               <a href="#offices">Reserve a number</a>
             </Button>
+            <Button asChild size="lg" variant="outline">
+              <a href="#contact">Contact us</a>
+            </Button>
           </div>
 
           <ul className="mt-2 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:gap-x-6">

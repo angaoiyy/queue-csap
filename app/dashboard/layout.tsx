@@ -4,6 +4,7 @@ import { AuthButton } from "@/components/auth-button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/lib/utils";
 import { getSessionProfile } from "@/lib/offices";
+import { getUnreadContactCount } from "@/lib/actions/contact";
 import Link from "next/link";
 import { Suspense } from "react";
 import Image from "next/image";
@@ -31,6 +32,11 @@ async function DashboardNavLinks() {
   const reserveHref = office ? `/${office.slug}/reserve` : "/";
   const displayHref = office ? `/${office.slug}/display` : "/";
   const adminHref = office ? `/dashboard/${office.slug}/admin` : "/dashboard";
+  // A missing contact_messages table (migration 029 not applied yet) must not
+  // take the whole dashboard nav down.
+  const unreadMessages = isSuperAdmin
+    ? await getUnreadContactCount().catch(() => 0)
+    : 0;
 
   return (
     <>
@@ -49,6 +55,19 @@ async function DashboardNavLinks() {
           className="hover:text-primary-foreground"
         >
           Staff Approvals
+        </Link>
+      )}
+      {isSuperAdmin && (
+        <Link
+          href="/dashboard/messages"
+          className="inline-flex items-center gap-1.5 hover:text-primary-foreground"
+        >
+          Messages
+          {unreadMessages > 0 && (
+            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold leading-none text-secondary-foreground">
+              {unreadMessages}
+            </span>
+          )}
         </Link>
       )}
       {office && (

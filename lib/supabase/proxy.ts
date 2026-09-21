@@ -11,8 +11,9 @@ const LEGACY_DASHBOARD_PATHS = [
 
 // Segments directly under /dashboard that are NOT an office slug. The coarse
 // office-routing below must leave these alone (e.g. /dashboard/staff is the
-// super admin's approvals screen, not an office).
-const NON_OFFICE_DASHBOARD_SEGMENTS = new Set(["staff"]);
+// super admin's approvals screen, /dashboard/messages is the contact inbox,
+// not an office).
+const NON_OFFICE_DASHBOARD_SEGMENTS = new Set(["staff", "messages"]);
 
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/" || pathname === "/login") return true;
