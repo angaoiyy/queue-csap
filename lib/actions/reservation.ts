@@ -360,6 +360,9 @@ export type DisplayData = {
   videoEnabled: boolean;
   audioEnabled: boolean;
   marqueeText: string;
+  lunchBreakEnabled: boolean;
+  lunchBreakStart: string;
+  lunchBreakEnd: string;
   priorityNext: Array<{
     queueNumber: string;
     studentName: string;
@@ -414,6 +417,9 @@ export async function getDisplayData(officeSlug: string): Promise<DisplayData> {
     videoEnabled: displaySettings.isEnabled,
     audioEnabled: displaySettings.audioEnabled,
     marqueeText: displaySettings.marqueeText,
+    lunchBreakEnabled: displaySettings.lunchBreakEnabled,
+    lunchBreakStart: displaySettings.lunchBreakStart,
+    lunchBreakEnd: displaySettings.lunchBreakEnd,
     priorityNext: queue
       .filter((reservation) => reservation.status === "waiting" && reservation.is_priority)
       .slice(0, 5)

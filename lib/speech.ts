@@ -14,6 +14,10 @@ const CHIME_FADE_SECONDS = 0.15;
 let chimeAudio: HTMLAudioElement | null = null;
 let chimeAudioFailed = false;
 
+function isAutoplayBlocked(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "NotAllowedError";
+}
+
 function playCustomChime(): Promise<boolean> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || chimeAudioFailed) {
@@ -50,8 +54,10 @@ function playCustomChime(): Promise<boolean> {
 
     audio.currentTime = 0;
     audio.volume = 1;
-    audio.play().catch(() => {
-      chimeAudioFailed = true;
+    audio.play().catch((err: unknown) => {
+      // Autoplay-blocked is temporary (no gesture yet); only a real load
+      // failure should disable the custom chime for good.
+      if (!isAutoplayBlocked(err)) chimeAudioFailed = true;
       cleanup();
       resolve(false);
     });
@@ -190,6 +196,27 @@ export async function speakNowServing(
   await speakSequence([outro], 1);
 }
 
+// True when the browser will let this page make sound right now: either the
+// page already had a user gesture, or autoplay is allowed for it (kiosk flag,
+// site permission, high media engagement). A saved "enabled" flag is not
+// enough -- the unlock does not survive a reload.
+export async function canPlayAudio(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (navigator.userActivation?.hasBeenActive) return true;
+
+  const ctx = getAudioContext();
+  if (!ctx) return false;
+  if (ctx.state === "running") return true;
+
+  // resume() stays pending forever when autoplay is blocked, so race it.
+  await Promise.race([
+    ctx.resume().catch(() => {}),
+    new Promise((resolve) => window.setTimeout(resolve, 250)),
+  ]);
+  // Re-read: TS narrowed state above, but resume() may have changed it.
+  return (ctx.state as AudioContextState) === "running";
+}
+
 export function unlockSpeech() {
   if (typeof window === "undefined") return;
 
@@ -208,8 +235,9 @@ export function unlockSpeech() {
           chimeAudio.volume = 1;
         }
       })
-      .catch(() => {
-        chimeAudioFailed = true;
+      .catch((err: unknown) => {
+        if (chimeAudio) chimeAudio.volume = 1;
+        if (!isAutoplayBlocked(err)) chimeAudioFailed = true;
       });
   }
 

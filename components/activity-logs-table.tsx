@@ -5,6 +5,7 @@ import {
   Activity,
   AlertCircle,
   BellRing,
+  FileDown,
   LayoutGrid,
   ListPlus,
   Monitor,
@@ -44,10 +45,13 @@ type ActivityLog = {
 };
 
 const PAGE_SIZE = 10;
+// PostgREST returns at most 1000 rows per request; the export pages through.
+const EXPORT_BATCH_SIZE = 1000;
 
 type Props = {
   officeSlug: string;
   officeId: string;
+  officeLabel: string;
 };
 
 const ACTION_META: Record<
@@ -90,6 +94,30 @@ function actionMeta(action: string) {
   );
 }
 
+// Local calendar date (YYYY-MM-DD). toISOString() is UTC, which is still
+// "yesterday" before 8 AM in Manila.
+function localDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function matchesFilters(
+  log: ActivityLog,
+  search: string,
+  actionFilter: string,
+): boolean {
+  if (actionFilter !== "all" && log.action !== actionFilter) return false;
+  const q = search.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    log.action.toLowerCase().includes(q) ||
+    (log.actor_email ?? "").toLowerCase().includes(q) ||
+    JSON.stringify(log.metadata).toLowerCase().includes(q)
+  );
+}
+
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   const diff = Date.now() - then;
@@ -107,7 +135,7 @@ function relativeTime(iso: string): string {
   });
 }
 
-export function ActivityLogsTable({ officeSlug, officeId }: Props) {
+export function ActivityLogsTable({ officeSlug, officeId, officeLabel }: Props) {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [windows, setWindows] = useState<QueueWindow[]>([]);
   const [analytics, setAnalytics] = useState<ActivityAnalytics | null>(null);
@@ -120,6 +148,8 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const getDateRange = useCallback(() => {
     const start = new Date(`${fromDate}T00:00:00`);
@@ -183,7 +213,7 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
   }, [loadLogs, loadAnalytics, loadWindows]);
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateString(new Date());
     setFromDate(today);
     setToDate(today);
     loadWindows();
@@ -264,19 +294,10 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
     setPage(1);
   }, [search, actionFilter, fromDate, toDate, windowFilter]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return logs.filter((log) => {
-      const actionMatch = actionFilter === "all" || log.action === actionFilter;
-      if (!actionMatch) return false;
-      if (!q) return true;
-      return (
-        log.action.toLowerCase().includes(q) ||
-        (log.actor_email ?? "").toLowerCase().includes(q) ||
-        JSON.stringify(log.metadata).toLowerCase().includes(q)
-      );
-    });
-  }, [logs, search, actionFilter]);
+  const filtered = useMemo(
+    () => logs.filter((log) => matchesFilters(log, search, actionFilter)),
+    [logs, search, actionFilter],
+  );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -286,8 +307,8 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - (days - 1));
-    setFromDate(start.toISOString().slice(0, 10));
-    setToDate(end.toISOString().slice(0, 10));
+    setFromDate(localDateString(start));
+    setToDate(localDateString(end));
   };
 
   const windowLabel = (log: ActivityLog): string => {
@@ -322,6 +343,85 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
       return `Window count ${previous} → ${next}`;
     }
     return "—";
+  };
+
+  // Exports the current filtered view. Re-queries instead of reusing `logs`
+  // so the PDF is not cut off at the table's 500-row cap.
+  const exportPdf = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const supabase = createClient();
+      const { fromISO, toISO } = getDateRange();
+      const windowId = windowFilter === "all" ? undefined : windowFilter;
+
+      const all: ActivityLog[] = [];
+      for (let offset = 0; ; offset += EXPORT_BATCH_SIZE) {
+        let query = supabase
+          .from("activity_logs")
+          .select("*")
+          .eq("office_id", officeId)
+          .gte("created_at", fromISO)
+          .lte("created_at", toISO)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(offset, offset + EXPORT_BATCH_SIZE - 1);
+        if (windowId) {
+          query = query.filter("metadata->>window_id", "eq", windowId);
+        }
+        const { data, error: queryError } = await query;
+        if (queryError) throw new Error(queryError.message);
+        all.push(...((data ?? []) as ActivityLog[]));
+        if (!data || data.length < EXPORT_BATCH_SIZE) break;
+      }
+
+      const matching = all.filter((log) =>
+        matchesFilters(log, search, actionFilter),
+      );
+      if (matching.length === 0) {
+        setExportError("No activity matches the current filters.");
+        return;
+      }
+
+      const [summary, { data: userData }, { buildActivityLogsPdf }] =
+        await Promise.all([
+          getActivityAnalytics({ officeSlug, fromISO, toISO, windowId }),
+          supabase.auth.getUser(),
+          import("@/lib/activity-logs-pdf"),
+        ]);
+
+      const doc = buildActivityLogsPdf({
+        officeLabel,
+        fromDate,
+        toDate,
+        filters: {
+          window: windowId
+            ? (windows.find((w) => w.id === windowId)?.name ?? "Unknown window")
+            : "All windows",
+          action:
+            actionFilter === "all"
+              ? "All actions"
+              : actionMeta(actionFilter).label,
+          search: search.trim(),
+        },
+        generatedBy: userData.user?.email ?? "Unknown user",
+        summary: {
+          totalQueueCreated: summary.totalQueueCreated,
+          totalProcessed: summary.totalProcessed,
+        },
+        rows: matching.map((log) => ({
+          createdAt: log.created_at,
+          action: actionMeta(log.action).label,
+          window: windowLabel(log),
+          details: summarizeDetails(log),
+        })),
+      });
+      doc.save(`activity-logs_${officeSlug}_${fromDate}_to_${toDate}.pdf`);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const maxActionCount = Math.max(
@@ -477,16 +577,28 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
               30 days
             </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={refreshAll}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            Refresh
-          </Button>
+          <div className="ml-auto flex gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refreshAll}
+              disabled={refreshing}
+            >
+              <RefreshCw
+                className={cn("size-4", refreshing && "animate-spin")}
+              />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportPdf}
+              disabled={exporting || loading || filtered.length === 0}
+            >
+              <FileDown className="size-4" />
+              {exporting ? "Exporting…" : "Export PDF"}
+            </Button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-3">
           <div className="relative min-w-[14rem] flex-1">
@@ -536,6 +648,16 @@ export function ActivityLogsTable({ officeSlug, officeId }: Props) {
           <div>
             <p className="font-medium">Could not load activity logs</p>
             <p className="text-destructive/80">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {exportError && (
+        <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">Could not export PDF</p>
+            <p className="text-destructive/80">{exportError}</p>
           </div>
         </div>
       )}

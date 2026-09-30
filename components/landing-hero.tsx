@@ -35,8 +35,8 @@ export function LandingHero() {
           </span>
 
           <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-5xl">
-            Web-Based Priority Numbers for{" "}
-            <span className="text-primary">Payment and Requests</span>
+            Web-Based Queue Management System for{" "}
+            <span className="text-primary">Registrar and Accounting</span>
           </h1>
 
           <p className="max-w-md text-lg text-muted-foreground">

@@ -28,7 +28,11 @@ async function ActivityLogsContent({
           {office.label} — reservation and queue operations from staff actions.
         </p>
       </div>
-      <ActivityLogsTable officeSlug={office.slug} officeId={office.id} />
+      <ActivityLogsTable
+        officeSlug={office.slug}
+        officeId={office.id}
+        officeLabel={office.label}
+      />
     </div>
   );
 }
