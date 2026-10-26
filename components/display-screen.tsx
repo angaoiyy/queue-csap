@@ -246,7 +246,7 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
       (ticket) =>
         ticket.windowName === windowData.windowName &&
         ticket.status === "waiting",
-    ),
+    ).slice(0, 15),
   }));
 
   return (
@@ -355,13 +355,16 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
                           Waiting
                         </p>
                         {windowColumn.waitingTickets.length > 0 ? (
-                          <div className="flex max-h-72 min-h-0 flex-1 flex-col gap-2 overflow-y-auto lg:max-h-none">
-                            {windowColumn.waitingTickets.map((ticket) => (
+                          <div className="grid max-h-72 min-h-0 grid-cols-3 content-start gap-2 overflow-y-auto lg:max-h-none">
+                            {windowColumn.waitingTickets.map((ticket, index) => (
                               <div
                                 key={`${ticket.windowName}-${ticket.queueNumber}`}
-                                className="flex-shrink-0 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-center"
+                                className="relative min-w-0 rounded-lg border border-white/20 bg-white/10 py-3 pl-10 pr-2 text-center [container-type:inline-size]"
                               >
-                                <span className="text-xl font-bold tracking-wide text-white">
+                                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-lg font-black tabular-nums text-secondary sm:text-xl">
+                                  {index + 1}
+                                </span>
+                                <span className="block truncate text-[clamp(0.875rem,19cqw,2rem)] font-black leading-tight tracking-wide text-white">
                                   {ticket.queueNumber}
                                 </span>
                               </div>

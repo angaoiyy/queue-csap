@@ -436,7 +436,6 @@ export async function getDisplayData(officeSlug: string): Promise<DisplayData> {
         (reservation) =>
           reservation.status === "serving" || reservation.status === "waiting"
       )
-      .slice(0, 10)
       .map((reservation) => ({
         queueNumber: reservation.queue_number,
         windowName:

@@ -33,6 +33,17 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*.local
 .env
+.env.*
+!.env.example
+!.env.sample
+
+# local credentials and Supabase CLI cache
+*.key
+*.p12
+*.pfx
+/.aws/
+/supabase/.temp/
+/supabase/.branches/
 
 # vercel
 .vercel
