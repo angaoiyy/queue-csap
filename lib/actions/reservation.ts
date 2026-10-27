@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { isValidStudentId, STUDENT_ID_ERROR } from "@/lib/student-id";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import {
   PRIORITY_TYPES,
@@ -75,6 +76,11 @@ export type CreateReservationResult =
 export async function createReservation(
   input: CreateReservationInput
 ): Promise<CreateReservationResult> {
+  const isOld = input.application_type === "old";
+  if (isOld && !isValidStudentId(input.student_id)) {
+    return { success: false, error: STUDENT_ID_ERROR };
+  }
+
   const supabase = await createClient();
   const manilaToday = getManilaDateString();
 
@@ -89,7 +95,6 @@ export async function createReservation(
     return { success: false, error: "No active windows configured for today" };
   }
 
-  const isOld = input.application_type === "old";
   const inquiryTable = isOld ? "inquiry_types" : "admission_inquiry_types";
 
   const [inquiryTypes, departments] = await Promise.all([
@@ -109,10 +114,6 @@ export async function createReservation(
   );
   if (!departmentConfig) {
     return { success: false, error: "Invalid department" };
-  }
-
-  if (isOld && !input.student_id?.trim()) {
-    return { success: false, error: "Student ID is required" };
   }
 
   if (departmentConfig.requires_degree_program && !input.degree_program?.trim()) {
