@@ -215,25 +215,30 @@ export async function createReservation(
     window_name: windowName,
   };
 
+  // Tickets print from the kiosk browser (components/print-ticket.tsx). Server
+  // printing only works when the server is the PC wired to the printer, so it
+  // is opt-in via TICKET_PRINT_MODE=server.
   let printError: string | undefined;
-  try {
-    const printResult = await printReservationTicket({
-      queueNumber: reservation.queue_number,
-      studentName: reservation.student_name,
-      studentId: reservation.student_id ?? "",
-      department: reservation.department,
-      inquiryType: reservation.inquiry_type,
-      claimOrRequest: reservation.claim_or_request ?? "",
-      windowName,
-      position: reservation.position,
-      estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
-      createdAt: new Date(reservation.created_at),
-    });
-    if (!printResult.success) {
-      printError = printResult.error;
+  if (process.env.TICKET_PRINT_MODE === "server") {
+    try {
+      const printResult = await printReservationTicket({
+        queueNumber: reservation.queue_number,
+        studentName: reservation.student_name,
+        studentId: reservation.student_id ?? "",
+        department: reservation.department,
+        inquiryType: reservation.inquiry_type,
+        claimOrRequest: reservation.claim_or_request ?? "",
+        windowName,
+        position: reservation.position,
+        estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
+        createdAt: new Date(reservation.created_at),
+      });
+      if (!printResult.success) {
+        printError = printResult.error;
+      }
+    } catch (err) {
+      printError = err instanceof Error ? err.message : "Unknown printer error";
     }
-  } catch (err) {
-    printError = err instanceof Error ? err.message : "Unknown printer error";
   }
 
   return {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
+import { PrintTicket } from "@/components/print-ticket";
 import {
   Card,
   CardContent,
@@ -49,6 +50,13 @@ async function ConfirmationContent({ params, searchParams }: Props) {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6">
+      <PrintTicket
+        ticketKey={`${office}:${queue}:${date}`}
+        queueNumber={queue}
+        studentName={name}
+        claimOrRequest={claimOrRequest}
+        windowName={window}
+      />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Queue Reserved</CardTitle>
