@@ -3,58 +3,38 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { isKioskMode } from "@/lib/kiosk-mode";
+import {
+  renderTicketImage,
+  TICKET_WIDTH_MM,
+  type TicketImage,
+  type TicketImageData,
+} from "@/lib/printer/ticket-image";
 
-type PrintTicketProps = {
+type PrintTicketProps = TicketImageData & {
   ticketKey: string;
-  queueNumber: string;
-  studentName: string;
-  claimOrRequest: string;
-  windowName: string;
 };
 
 const PRINTED_KEY_PREFIX = "screenb-ticket-printed:";
 
-// Mirrors the ESC/POS layout in lib/printer/ticket.ts on a 58mm XP-58/X58:
-// 384 printable dots (48mm) = 32 Font A chars, each 12x24 dots (1.5mm x 3mm).
-const CHARS_PER_LINE_NORMAL = 32;
-const DOT_ROW_MM = 3;
-
-// node-thermal-printer's setTextSize(4, w) emits GS ! with 4 in the width
-// nibble, so the number prints 5x wide and (w + 1)x tall.
-function heightMultiplierFor(text: string) {
-  return (
-    Math.max(
-      0,
-      Math.min(3, Math.floor(CHARS_PER_LINE_NORMAL / text.length) - 1),
-    ) + 1
-  );
-}
-
-const ticketCss = `
+// The page is sized to the ticket itself so the printer stops feeding paper
+// right after the last line instead of running out the driver's long roll size.
+function ticketCss(heightMm: number) {
+  return `
 .print-ticket { display: none; }
 @media print {
-  @page { margin: 0; }
+  @page { size: ${TICKET_WIDTH_MM}mm ${heightMm}mm; margin: 0; }
   html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
   body > :not(.print-ticket) { display: none !important; }
-  .print-ticket {
+  .print-ticket { display: block; }
+  .print-ticket img {
     display: block;
-    box-sizing: border-box;
-    width: 58mm;
-    padding: 0 5mm ${DOT_ROW_MM}mm;
-    color: #000;
-    background: #fff;
-    font-family: Consolas, "Courier New", monospace;
-    font-size: 2.7mm;
-    line-height: ${DOT_ROW_MM}mm;
+    width: ${TICKET_WIDTH_MM}mm;
+    height: ${heightMm}mm;
+    image-rendering: pixelated;
   }
-  .print-ticket p { margin: 0; overflow-wrap: anywhere; }
-  .print-ticket .center { text-align: center; }
-  .print-ticket .bold { font-weight: 700; }
-  .print-ticket .rule { white-space: pre; overflow: hidden; }
-  .print-ticket .number { font-size: 13.6mm; font-weight: 700; text-align: center; white-space: nowrap; }
-  .print-ticket .number span { display: inline-block; transform-origin: center; }
 }
 `;
+}
 
 export function PrintTicket({
   ticketKey,
@@ -63,14 +43,32 @@ export function PrintTicket({
   claimOrRequest,
   windowName,
 }: PrintTicketProps) {
-  const [mounted, setMounted] = useState(false);
+  const [ticket, setTicket] = useState<TicketImage | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    let cancelled = false;
+    const rendered = renderTicketImage({
+      queueNumber,
+      studentName,
+      claimOrRequest,
+      windowName,
+    });
+    // Decode before rendering so the bitmap is ready when print() snapshots the page.
+    const img = new Image();
+    img.src = rendered.url;
+    img
+      .decode()
+      .catch(() => {})
+      .then(() => {
+        if (!cancelled) setTicket(rendered);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [queueNumber, studentName, claimOrRequest, windowName]);
 
   useEffect(() => {
-    if (!mounted || !isKioskMode()) return;
+    if (!ticket || !isKioskMode()) return;
 
     // Guard against reprinting on refresh, back/forward, or Strict Mode re-runs.
     const storageKey = PRINTED_KEY_PREFIX + ticketKey;
@@ -81,36 +79,15 @@ export function PrintTicket({
       // Storage unavailable: still print once for this mount.
     }
     window.print();
-  }, [mounted, ticketKey]);
+  }, [ticket, ticketKey]);
 
-  if (!mounted) return null;
-
-  const match = queueNumber.match(/^([A-Za-z]+)(\d+)$/);
-  const numberLines = match ? [match[1], match[2]] : [queueNumber];
-  const rule = "-".repeat(CHARS_PER_LINE_NORMAL);
+  if (!ticket) return null;
 
   return createPortal(
     <div className="print-ticket" aria-hidden="true">
-      <style>{ticketCss}</style>
-      <p className="center bold">CSAP QUEUE TICKET</p>
-      <p className="rule">{rule}</p>
-      {numberLines.map((line, i) => {
-        const height = heightMultiplierFor(line);
-        return (
-          <p
-            key={i}
-            className="number"
-            style={{ lineHeight: `${height * DOT_ROW_MM}mm` }}
-          >
-            <span style={{ transform: `scaleY(${height / 4})` }}>{line}</span>
-          </p>
-        );
-      })}
-      <p>Name: {studentName}</p>
-      {claimOrRequest && <p>Transaction: {claimOrRequest}</p>}
-      <p>Window: {windowName || "To be announced"}</p>
-      <p className="rule">{rule}</p>
-      <p className="center">Please wait for your number to be called.</p>
+      <style>{ticketCss(ticket.heightMm)}</style>
+      {/* eslint-disable-next-line @next/next/no-img-element -- data URL bitmap */}
+      <img src={ticket.url} alt="" />
     </div>,
     document.body,
   );
