@@ -350,6 +350,36 @@ export function ActivityLogsTable({ officeSlug, officeId, officeLabel }: Props) 
           import("@/lib/activity-logs-pdf"),
         ]);
 
+      const logName = (log: ActivityLog): string => {
+        const meta = log.metadata ?? {};
+        const name = log.action === "reservation_created"
+          ? meta.student_name
+          : meta.now_serving_student_name;
+        return typeof name === "string" ? name.trim() : "";
+      };
+      const reservationId = (log: ActivityLog): string | undefined => {
+        const id = log.entity_type === "reservation"
+          ? log.entity_id
+          : log.metadata?.now_serving_reservation_id;
+        return typeof id === "string" && id ? id : undefined;
+      };
+      const missingIds = [...new Set(matching.flatMap((log) => {
+        const id = reservationId(log);
+        return !logName(log) && id ? [id] : [];
+      }))];
+      const namesById = new Map<string, string>();
+      for (let offset = 0; offset < missingIds.length; offset += 100) {
+        const { data, error: nameError } = await supabase
+          .from("reservations")
+          .select("id, student_name")
+          .eq("office_id", officeId)
+          .in("id", missingIds.slice(offset, offset + 100));
+        if (nameError) throw new Error(nameError.message);
+        for (const reservation of data ?? []) {
+          namesById.set(reservation.id, reservation.student_name);
+        }
+      }
+
       const doc = buildActivityLogsPdf({
         officeLabel,
         fromDate,
@@ -372,6 +402,7 @@ export function ActivityLogsTable({ officeSlug, officeId, officeLabel }: Props) 
         rows: matching.map((log) => ({
           createdAt: log.created_at,
           action: actionMeta(log.action).label,
+          name: logName(log) || namesById.get(reservationId(log) ?? "") || "-",
           window: windowLabel(log),
           details: summarizeDetails(log),
         })),

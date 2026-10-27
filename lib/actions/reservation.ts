@@ -670,7 +670,7 @@ async function dispatchWindow(
 
   const { data: servingData } = await supabase
     .from("reservations")
-    .select("id, queue_number, inquiry_type")
+    .select("id, queue_number, inquiry_type, student_name")
     .eq("status", "serving")
     .eq("window_id", windowId)
     .order("called_at", { ascending: false })
@@ -688,6 +688,7 @@ async function dispatchWindow(
       window_id: windowId,
       window_name: window?.name ?? "Unknown Window",
       now_serving_queue: servingData?.queue_number ?? null,
+      now_serving_student_name: servingData?.student_name ?? null,
       now_serving_inquiry_type: servingData?.inquiry_type ?? null,
       now_serving_reservation_id: servingData?.id ?? null,
     },
