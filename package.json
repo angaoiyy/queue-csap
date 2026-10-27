@@ -4,7 +4,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:quotas": "node --test tests/quotas.test.mjs",
+    "test:quotas:db": "node tests/quota-database.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.1",

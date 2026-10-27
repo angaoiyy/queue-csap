@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { parseVideoEmbedUrl } from "@/lib/video";
-import { resolveOfficeId } from "@/lib/offices";
+import { getSessionProfile, resolveOfficeId } from "@/lib/offices";
 
 export type DisplaySettingsActionResult =
   | { success: true }
@@ -64,6 +64,10 @@ async function updateDisplaySettings(
   officeSlug: string,
   patch: Record<string, unknown>
 ): Promise<DisplaySettingsActionResult> {
+  const profile = await getSessionProfile();
+  if (profile?.role !== "super_admin" || profile.office?.slug !== officeSlug) {
+    return { success: false, error: "Only the super admin can change the shared office display." };
+  }
   const officeId = await resolveOfficeId(officeSlug);
   const supabase = await createClient();
   const { error } = await supabase

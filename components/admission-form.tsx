@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuotaAvailability } from "@/lib/use-quota-availability";
+import { availabilityMessage, canReserve } from "@/lib/quotas";
+import { ReservationAvailability } from "@/components/reservation-availability";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -49,6 +52,9 @@ export function AdmissionForm({
   requiresClaimRequest,
 }: AdmissionFormProps) {
   const router = useRouter();
+  const { availability, error: availabilityError, refresh: refreshAvailability } = useQuotaAvailability(officeSlug);
+  const reservationOpen = !!availability && !availabilityError && canReserve(availability);
+  const quotaMessage = availabilityError ?? (availability ? availabilityMessage(availability) : "Checking reservation availability...");
   const initialFormData: CreateReservationInput = {
     office_slug: officeSlug,
     application_type: "new",
@@ -67,7 +73,7 @@ export function AdmissionForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLoading) return;
+    if (isLoading || !reservationOpen) return;
     setError(null);
     setIsLoading(true);
     try {
@@ -93,7 +99,10 @@ export function AdmissionForm({
         router.push(`/${officeSlug}/reserve/confirmation?${params.toString()}`);
       } else {
         setError(result.error);
+        void refreshAvailability();
       }
+    } catch {
+      setError("Could not create your reservation. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -290,7 +299,8 @@ export function AdmissionForm({
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <ReservationAvailability message={quotaMessage} retry={() => void refreshAvailability()} />
+          <Button type="submit" className="w-full" disabled={isLoading || !reservationOpen}>
             {isLoading ? "Reserving..." : "Reserve Queue Number"}
           </Button>
         </form>

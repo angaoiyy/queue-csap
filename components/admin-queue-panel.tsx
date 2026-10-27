@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   callNextReservation,
@@ -22,6 +21,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { WindowQuotaPanel } from "@/components/window-quota-panel";
+import { getWindowAssignment, switchWindow, releaseWindow, recallWindowTicket, type StaffWindowState } from "@/lib/actions/window-assignment";
+import { usePolling } from "@/lib/use-polling";
 import {
   Select,
   SelectContent,
@@ -33,9 +35,10 @@ import {
 type Props = {
   officeSlug: string;
   officeId: string;
+  canManageOffice?: boolean;
 };
 
-export function AdminQueuePanel({ officeSlug, officeId }: Props) {
+export function AdminQueuePanel({ officeSlug, officeId, canManageOffice = false }: Props) {
   const PAGE_SIZE = 5;
   const [windows, setWindows] = useState<QueueWindow[]>([]);
   const [selectedWindowId, setSelectedWindowId] = useState("");
@@ -46,7 +49,16 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
   const [isCalling, setIsCalling] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
   const [isRecalling, setIsRecalling] = useState(false);
-  const recallChannelRef = useRef<RealtimeChannel | null>(null);
+  const [assignment, setAssignment] = useState<StaffWindowState | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const assignmentRequest = useRef(0);
+  const assignmentBusy = useRef(false);
+  const assignmentLoading = useRef(false);
+  const lastAssignmentRead = useRef(0);
+  const lastManualRefresh = useRef(0);
+  const selectedWindowRef = useRef(selectedWindowId);
+  selectedWindowRef.current = selectedWindowId;
   const [isSavingWindowCount, setIsSavingWindowCount] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoUrlInput, setVideoUrlInput] = useState("");
@@ -59,17 +71,90 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
   const [isSavingMarqueeText, setIsSavingMarqueeText] = useState(false);
   const [marqueeTextError, setMarqueeTextError] = useState<string | null>(null);
 
+  const applyAssignment = useCallback((state: StaffWindowState) => {
+    setAssignment(state);
+    setSelectedWindowId(state.currentWindowId ?? "");
+    setAssignmentError(null);
+  }, []);
+
+  const loadAssignment = useCallback(async () => {
+    if (assignmentBusy.current || assignmentLoading.current || document.visibilityState === "hidden" || !navigator.onLine) return;
+    const request = ++assignmentRequest.current;
+    assignmentLoading.current = true;
+    try {
+      const result = await getWindowAssignment(officeSlug);
+      if (request !== assignmentRequest.current) return;
+      if (result.success) { applyAssignment(result.state); lastAssignmentRead.current = Date.now(); }
+      else {
+        setAssignmentError("Could not check your window assignment. Please retry.");
+        setSelectedWindowId("");
+      }
+    } catch {
+      if (request === assignmentRequest.current) {
+        setAssignmentError("Could not check your window assignment. Please retry.");
+        setSelectedWindowId("");
+      }
+    } finally { assignmentLoading.current = false; }
+  }, [officeSlug, applyAssignment]);
+
+  usePolling(loadAssignment, 15000);
+
+  useEffect(() => {
+    if (!assignment?.expiresAt || !selectedWindowId) return;
+    const timer = setTimeout(() => {
+      setAssignmentError("Your window assignment expired. Select an available window again.");
+      setSelectedWindowId("");
+      void loadAssignment();
+    }, Math.max(0, Date.parse(assignment.expiresAt) - Date.now() + 50));
+    return () => clearTimeout(timer);
+  }, [assignment?.expiresAt, selectedWindowId, loadAssignment]);
+
+  const handleSwitchWindow = async (windowId: string | null) => {
+    if (assignmentBusy.current || isCalling || isSkipping || isRecalling) return;
+    assignmentBusy.current = true;
+    assignmentRequest.current++;
+    setIsSwitching(true);
+    setError(null);
+    let needsRefresh = true;
+    try {
+      if (windowId) {
+        const result = await switchWindow(windowId);
+        if (result.success) { applyAssignment(result.state); needsRefresh = false; }
+        else setError(result.error);
+      } else {
+        const result = await releaseWindow();
+        if (result.success) {
+          setSelectedWindowId("");
+          setAssignment((previous) => previous ? { ...previous, currentWindowId: null, expiresAt: null } : null);
+        } else setError(result.error);
+      }
+    } catch {
+      setError("Could not change your window assignment. Please retry.");
+    } finally {
+      assignmentBusy.current = false;
+      setIsSwitching(false);
+      // A successful switch already returned the complete authoritative state.
+      // Refresh on release/failure to reconcile occupancy without polling.
+      if (needsRefresh) await loadAssignment();
+    }
+  };
+
   const loadQueue = async () => {
+    if (document.visibilityState === "hidden" || !navigator.onLine) return;
+    const windowId = selectedWindowRef.current;
+    if (!windowId) { setQueue([]); return; }
     const todayQueueDate = getManilaDateString();
     const supabase = createClient();
     const { data, error: queryError } = await supabase
       .from("reservations")
       .select("*")
       .eq("office_id", officeId)
+      .eq("window_id", windowId)
       .eq("queue_date", todayQueueDate)
       .in("status", ["waiting", "serving"])
       .order("is_priority", { ascending: false })
       .order("created_at", { ascending: true });
+    if (windowId !== selectedWindowRef.current) return;
     if (queryError) {
       setError(queryError.message);
       return;
@@ -78,6 +163,7 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
   };
 
   const loadWindows = async () => {
+    if (document.visibilityState === "hidden" || !navigator.onLine) return;
     const supabase = createClient();
     const { data, error: queryError } = await supabase
       .from("windows")
@@ -94,11 +180,12 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
     setWindowCountInput(String(active.length || 1));
     setSelectedWindowId((prev) => {
       if (prev && active.some((window) => window.id === prev)) return prev;
-      return active[0]?.id ?? "";
+      return "";
     });
   };
 
   const loadDisplaySettings = async () => {
+    if (!canManageOffice || document.visibilityState === "hidden" || !navigator.onLine) return;
     const settings = await getDisplaySettings(officeId);
     setSavedVideoUrl(settings.videoUrl);
     setVideoUrlInput(settings.videoUrl ?? "");
@@ -108,123 +195,38 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
 
   useEffect(() => {
     loadWindows();
-    loadQueue();
     loadDisplaySettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeId]);
 
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`admin-reservations-changes-${officeSlug}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "windows",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          await loadWindows();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "display_settings",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          await loadDisplaySettings();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "reservations",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async (payload) => {
-          const eventType = payload.eventType;
-          if (eventType === "INSERT" || eventType === "UPDATE") {
-            const nextRow = payload.new as Reservation;
-            if (
-              nextRow.queue_date !== getManilaDateString() ||
-              nextRow.office_id !== officeId
-            ) {
-              return;
-            }
-            setQueue((prev) => {
-              const next = prev.filter((item) => item.id !== nextRow.id);
-              if (nextRow.status === "waiting" || nextRow.status === "serving") {
-                next.push(nextRow);
-              }
-              return next.sort((a, b) => {
-                if (a.is_priority !== b.is_priority) {
-                  return a.is_priority ? -1 : 1;
-                }
-                return (
-                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                );
-              });
-            });
-            return;
-          }
-          if (eventType === "DELETE") {
-            const oldRow = payload.old as Reservation;
-            setQueue((prev) => prev.filter((item) => item.id !== oldRow.id));
-            return;
-          }
-          await loadQueue();
-        }
-      )
-      .subscribe();
+  usePolling(async () => {
+    await Promise.all([loadQueue(), loadWindows()]);
+  }, 10000, true, false);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+  useEffect(() => {
+    setQueue([]);
+    setCurrentPage(1);
+    void loadQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeSlug, officeId]);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      loadQueue();
-      loadWindows();
-    }, 10000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeId]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase.channel(`queue-recall-${officeSlug}`);
-    channel.subscribe();
-    recallChannelRef.current = channel;
-    return () => {
-      supabase.removeChannel(channel);
-      recallChannelRef.current = null;
-    };
-  }, [officeSlug]);
+  }, [selectedWindowId]);
 
   const handleCallNext = async () => {
-    if (!selectedWindowId) {
+    if (!selectedWindowId || isSwitching || assignmentError) {
       setError("Select a window first");
       return;
     }
     setIsCalling(true);
     setError(null);
-    const result = await callNextReservation(officeSlug, selectedWindowId);
-    if (result.success) {
-      await loadQueue();
-    } else {
-      setError(result.error);
+    try {
+      const result = await callNextReservation(officeSlug, selectedWindowId);
+      if (result.success) await loadQueue();
+      else setError(result.error);
+    } catch {
+      setError("Could not call the next ticket. Please retry.");
+    } finally {
+      setIsCalling(false);
+      // Assignment ownership is checked atomically by the queue RPC.
     }
-    setIsCalling(false);
   };
 
   const callNextRef = useRef(handleCallNext);
@@ -235,6 +237,7 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
       if (event.key !== "Enter" || event.repeat) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
+      if (target?.closest("dialog")) return;
       const tag = target?.tagName;
       if (
         tag === "INPUT" ||
@@ -246,32 +249,35 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
       ) {
         return;
       }
-      if (isCalling || isSkipping || isRecalling) return;
+      if (isCalling || isSkipping || isRecalling || isSwitching || !selectedWindowId) return;
       event.preventDefault();
       void callNextRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isCalling, isSkipping, isRecalling]);
+  }, [isCalling, isSkipping, isRecalling, isSwitching, selectedWindowId]);
 
   const handleSkipCurrent = async () => {
-    if (!selectedWindowId) {
+    if (!selectedWindowId || isSwitching || assignmentError) {
       setError("Select a window first");
       return;
     }
     setIsSkipping(true);
     setError(null);
-    const result = await skipCurrentReservation(officeSlug, selectedWindowId);
-    if (result.success) {
-      await loadQueue();
-    } else {
-      setError(result.error);
+    try {
+      const result = await skipCurrentReservation(officeSlug, selectedWindowId);
+      if (result.success) await loadQueue();
+      else setError(result.error);
+    } catch {
+      setError("Could not skip the current ticket. Please retry.");
+    } finally {
+      setIsSkipping(false);
+      // Realtime carries the queue update; no assignment reread is needed.
     }
-    setIsSkipping(false);
   };
 
   const handleRecall = async () => {
-    if (!selectedWindowId) {
+    if (!selectedWindowId || isSwitching || assignmentError) {
       setError("Select a window first");
       return;
     }
@@ -279,24 +285,11 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
       setError("No number is being served at this window yet");
       return;
     }
-    const channel = recallChannelRef.current;
-    if (!channel) {
-      setError("Recall channel not ready, try again");
-      return;
-    }
     setIsRecalling(true);
     setError(null);
     try {
-      await channel.send({
-        type: "broadcast",
-        event: "recall",
-        payload: {
-          windowId: selectedWindowId,
-          queueNumber: nowServing.queue_number,
-          windowName: selectedWindow?.name ?? "",
-          studentName: nowServing.student_name ?? null,
-        },
-      });
+      const result = await recallWindowTicket(selectedWindowId);
+      if (!result.success) setError(result.error);
     } catch {
       setError("Could not send recall");
     }
@@ -353,6 +346,8 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
   const showClaimColumn = queue.some((reservation) => reservation.claim_or_request);
   const columnCount = showClaimColumn ? 10 : 9;
   const selectedWindow = windows.find((window) => window.id === selectedWindowId);
+  const controlsDisabled = !selectedWindowId || !!assignmentError || isSwitching || isCalling || isSkipping || isRecalling
+    || !assignment?.expiresAt || new Date(assignment.expiresAt).getTime() <= Date.now();
   const nowServing = queue.find(
     (reservation) =>
       reservation.status === "serving" && reservation.window_id === selectedWindowId
@@ -380,25 +375,33 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <WindowQuotaPanel key={selectedWindowId} officeSlug={officeSlug} currentWindowId={selectedWindowId} disabled={controlsDisabled} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-semibold">Queue</h2>
-        <div className="flex items-center gap-2">
-          <Select value={selectedWindowId} onValueChange={setSelectedWindowId}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Select window" />
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={selectedWindowId} onOpenChange={(open) => { if (open && Date.now() - lastAssignmentRead.current > 5000) void loadAssignment(); }} onValueChange={(id) => void handleSwitchWindow(id)} disabled={isSwitching || isCalling || isSkipping || isRecalling || !assignment}>
+            <SelectTrigger className="w-64" aria-label="Your service window">
+              <SelectValue placeholder={isSwitching ? "Switching..." : "Choose an available window"} />
             </SelectTrigger>
             <SelectContent>
-              {windows.map((window) => (
-                <SelectItem key={window.id} value={window.id}>
-                  {window.name}
+              {assignment?.windows.map((window) => (
+                <SelectItem key={window.id} value={window.id} disabled={window.occupied && !window.isMine}>
+                  {window.name} {window.isMine ? "(your window)" : window.occupied ? "(in use)" : "(available)"}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <Button type="button" variant="outline" disabled={isSwitching || isCalling || isSkipping || isRecalling}
+            onClick={() => {
+              if (Date.now() - lastManualRefresh.current < 1000) return;
+              lastManualRefresh.current = Date.now();
+              void loadAssignment(); void loadWindows(); void loadQueue();
+            }}>Refresh</Button>
+          <Button type="button" variant="outline" disabled={controlsDisabled} onClick={() => void handleSwitchWindow(null)}>Release Window</Button>
           <Button
             variant="outline"
             onClick={handleRecall}
-            disabled={isCalling || isSkipping || isRecalling || !nowServing}
+            disabled={controlsDisabled || !nowServing}
             title="Re-announce the number currently being served on the display"
           >
             {isRecalling ? "Recalling..." : "Recall"}
@@ -406,19 +409,22 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
           <Button
             variant="outline"
             onClick={handleSkipCurrent}
-            disabled={isSkipping || isCalling || isRecalling}
+            disabled={controlsDisabled}
           >
             {isSkipping ? "Skipping..." : "Skip"}
           </Button>
           <Button
             onClick={handleCallNext}
-            disabled={isCalling || isSkipping || isRecalling}
+            disabled={controlsDisabled}
             title="Press Enter to call next"
           >
             {isCalling ? "Calling..." : "Call Next"}
           </Button>
         </div>
       </div>
+
+      {assignmentError ? <p role="alert" className="text-sm text-destructive">{assignmentError} <button type="button" className="underline" onClick={() => void loadAssignment()}>Retry</button></p>
+        : <p role="status" className="text-sm text-muted-foreground">{selectedWindowId ? `You are operating ${selectedWindow?.name ?? "your selected window"}. Queue actions and quota changes apply only to this window.` : "Select an available window to start. Windows in use by another staff member cannot be selected."}</p>}
 
       {error && (
         <p className="text-sm text-destructive">{error}</p>
@@ -543,7 +549,7 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
         </div>
       </div>
 
-      <div className="rounded-lg border p-4 space-y-3">
+      {canManageOffice && <><div className="rounded-lg border p-4 space-y-3">
         <h3 className="font-medium">Window Configuration</h3>
         <div className="flex items-center gap-2">
           <Input
@@ -649,6 +655,7 @@ export function AdminQueuePanel({ officeSlug, officeId }: Props) {
         </p>
       </div>
 
+      </>}
       {(nowServing || queue.length > 0) && (
         <p className="text-sm text-muted-foreground">
           {selectedWindow?.name ?? "Window"} serving:{" "}
