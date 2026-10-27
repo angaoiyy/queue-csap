@@ -181,9 +181,9 @@ export function ReservationForm({
             <Label htmlFor="student_id">Student ID</Label>
             <Input
               id="student_id"
-              placeholder="2024-00123"
+              placeholder="012345-004826"
               pattern={STUDENT_ID_PATTERN}
-              maxLength={10}
+              maxLength={13}
               title={STUDENT_ID_ERROR}
               aria-describedby="student_id_hint"
               required
@@ -194,7 +194,7 @@ export function ReservationForm({
               onKeyDown={handleLookupKeyDown}
             />
             <p id="student_id_hint" className="text-xs text-muted-foreground">
-              Format: YYYY-NNNNN (e.g. 2024-00123). {isLookingUp
+              Format: 6 digits, a hyphen, then 6 digits (e.g. 012345-004826). {isLookingUp
                 ? "Looking up previous reservation..."
                 : "Press Enter to autofill from a previous reservation."}
             </p>
