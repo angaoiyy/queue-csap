@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePolling } from "@/lib/use-polling";
 import {
   Activity,
   AlertCircle,
@@ -81,6 +82,11 @@ const ACTION_META: Record<
     icon: LayoutGrid,
     className:
       "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900 dark:bg-purple-950 dark:text-purple-300",
+  },
+  window_quota_changed: {
+    label: "Window quota changed",
+    icon: LayoutGrid,
+    className: "border-border bg-muted text-muted-foreground",
   },
 };
 
@@ -231,64 +237,9 @@ export function ActivityLogsTable({ officeSlug, officeId, officeLabel }: Props) 
     };
   }, [fromDate, toDate, windowFilter, loadLogs, loadAnalytics]);
 
-  useEffect(() => {
-    if (!fromDate || !toDate) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`activity-logs-changes-${officeSlug}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "activity_logs",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          await loadLogs();
-          await loadAnalytics();
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "reservations",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          await loadAnalytics();
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "windows",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          await loadWindows();
-          await loadAnalytics();
-          await loadLogs();
-        },
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [
-    fromDate,
-    toDate,
-    windowFilter,
-    officeId,
-    officeSlug,
-    loadLogs,
-    loadAnalytics,
-    loadWindows,
-  ]);
+  usePolling(async () => {
+    await Promise.all([loadLogs(), loadAnalytics(), loadWindows()]);
+  }, 10000, Boolean(fromDate && toDate), false);
 
   useEffect(() => {
     setPage(1);
@@ -325,6 +276,15 @@ export function ActivityLogsTable({ officeSlug, officeId, officeLabel }: Props) 
 
   const summarizeDetails = (log: ActivityLog) => {
     const meta = log.metadata ?? {};
+    if (log.action === "window_quota_changed") {
+      const periods = Array.isArray(meta.periods) ? meta.periods : [];
+      const schedule = periods.flatMap((period: unknown) => {
+        if (!period || typeof period !== "object") return [];
+        const item = period as Record<string, unknown>;
+        return [`${String(item.start ?? "")}-${String(item.end ?? "")}: ${String(item.capacity ?? "")}`];
+      }).join("; ");
+      return `${String(meta.quota_date ?? "")} | Quota ${meta.enabled ? "on" : "off"}${meta.enabled ? ` | ${schedule}` : ""}`;
+    }
     if (log.action === "reservation_created") {
       const queue = String(meta.queue_number ?? "-");
       const inquiry = String(meta.inquiry_type ?? "-");
@@ -637,6 +597,7 @@ export function ActivityLogsTable({ officeSlug, officeId, officeLabel }: Props) 
               <SelectItem value="window_count_changed">
                 Window count changed
               </SelectItem>
+              <SelectItem value="window_quota_changed">Window quota changed</SelectItem>
             </SelectContent>
           </Select>
         </div>

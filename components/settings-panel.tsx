@@ -19,6 +19,7 @@ type Props = {
   purposeOptions: SettingsItem[];
   displaySettings: DisplaySettings;
   requiresClaimRequest: boolean;
+  canManageOffice?: boolean;
 };
 
 const SECTIONS = [
@@ -45,6 +46,7 @@ export function SettingsPanel({
   purposeOptions,
   displaySettings,
   requiresClaimRequest,
+  canManageOffice = false,
 }: Props) {
   const [activeSection, setActiveSection] = useState<SectionKey>("school_years");
   const editorScope = { officeSlug, officeId };
@@ -52,7 +54,7 @@ export function SettingsPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-2">
-        {SECTIONS.map((section) => (
+        {SECTIONS.filter((section) => section.key !== "display" || canManageOffice).map((section) => (
           <Button
             key={section.key}
             type="button"
@@ -155,7 +157,7 @@ export function SettingsPanel({
         />
       )}
 
-      {activeSection === "display" && (
+      {activeSection === "display" && canManageOffice && (
         <DisplayFeaturesEditor
           officeSlug={officeSlug}
           initialSettings={displaySettings}

@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AdminQueuePanel } from "@/components/admin-queue-panel";
-import { getOfficeBySlug } from "@/lib/offices";
+import { getOfficeBySlug, getSessionProfile } from "@/lib/offices";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -20,6 +20,7 @@ async function AdminContent({
 
   const office = await getOfficeBySlug(officeSlug);
   if (!office) notFound();
+  const profile = await getSessionProfile();
 
   const firstName = getFirstNameFromClaims(data.claims);
   const timeOfDayGreeting = getTimeOfDayGreeting();
@@ -35,7 +36,7 @@ async function AdminContent({
           {office.label} • {formattedDateTime}
         </p>
       </div>
-      <AdminQueuePanel officeSlug={office.slug} officeId={office.id} />
+      <AdminQueuePanel officeSlug={office.slug} officeId={office.id} canManageOffice={profile?.role === "super_admin"} />
       <div className="flex gap-4 text-sm">
         <Link
           href={`/${office.slug}/display`}

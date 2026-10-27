@@ -106,6 +106,34 @@ To enable the queue reservation system, run the SQL migration in your Supabase p
 2. Copy and run the contents of `supabase/migrations/001_create_reservations.sql`
 3. (Optional) For live queue updates on the display and admin screens, enable Realtime for the `reservations` table in **Database > Replication**
 
+### Daily window quotas
+
+The current frontend uses API polling. If migration 034 was applied fully or partially, run `035_restore_api_polling.sql` to roll back that optimization. Migration 035 is also safe on a database already at 033, and safe to rerun. It preserves reservations, quotas, windows, staff assignments, and ownership protections while removing only 034's derived metadata and helper RPCs. Keep migrations 032 and 033 for the quota and exclusive-window features.
+
+On an office's queue dashboard, first select an available window to claim it. Then choose **Configure Quotas**, enable its quota, and enter today's periods and positive whole-number limits. Staff can configure only their currently claimed window. Times use `Asia/Manila`; periods include their start and exclude their end. Quotas expire at midnight and must be configured again for the next day.
+
+Only waiting and serving tickets count, including priority tickets and backlog from earlier periods. Completed and skipped tickets free capacity. With a quota enabled, a window accepts new tickets only during configured periods; existing tickets can still be served outside them. Reducing a quota preserves existing tickets. A window cannot be closed while serving a ticket, or when its waiting queue cannot fit within the remaining windows' limits.
+
+Availability is refreshed through the existing server action every five seconds. Window queues refresh every ten seconds. Polling pauses in hidden/offline tabs and scheduled requests do not overlap. PostgreSQL remains authoritative for admission capacity and window ownership. Quota configuration changes are recorded in Activity Logs.
+
+Run `npm run test:quotas` for validation and availability tests. Run `npm run test:quotas:db` with PostgreSQL binaries on `PATH` (or set `PG_BIN` to their directory) for integration and concurrency tests. The database test runner creates a temporary local cluster, applies the complete migration history with a minimal Supabase Auth fixture, and removes the cluster afterward; it does not connect to the configured application database.
+
+### Exclusive staff windows
+
+Each staff account can claim one active window in its office. A window occupied by another staff account is unavailable. Switching claims the new window and releases the previous one atomically; a failed switch preserves the current assignment. Reloading the dashboard restores the claim, and another tab of the same account follows the same assignment.
+
+The dashboard checks assignments and renews its held claim through the existing server action every fifteen seconds while visible and online. Claims expire after two minutes without renewal. **Release Window** and signing out release the claim immediately. Hidden/offline dashboards pause polling; a returning staff member must select an available window again if the previous claim has expired. Unclaimed or expired sessions cannot call, skip, recall, or change a quota. Existing queue tickets stay with their window when an operator switches or releases it.
+
+Queue actions, quota writes, and direct reservation updates enforce ownership in the database. Priority tickets go first within the selected window's queue; dispatch never pulls a ticket from another window. Recall announcements are written by the authorized database RPC to `window_recalls`; displays read the latest recall nonce while polling every five seconds and announce changes after the initial load. Staff can view and operate their selected window's queue. Shared window-count and display controls are limited to the super admin; even the super admin must claim a window to operate its queue or quota. A window with a live staff claim cannot be closed until released or expired.
+
+The database test suite also checks claim conflicts, concurrent switches, failed-switch rollback, direct-write restrictions, stale tabs, heartbeat renewal, expiry, and authenticated recall events.
+
+### API polling and rollback
+
+The dashboard, quota forms, display, and activity-log UI use periodic API reads instead of Supabase Realtime channels. Display updates and recall announcements may take up to five seconds; window occupancy may take up to fifteen seconds to refresh. All mutations still validate the current state in PostgreSQL, so a stale browser view cannot steal an occupied window or exceed a quota.
+
+Apply `035_restore_api_polling.sql` to the application database and reload the frontend to finish the rollback. It restores migration 033's combined assignment read/renew behavior and removes migration 034's optimization tables, triggers, helper functions, and added quota publication membership in one transaction. The historical 034 migration remains in source control so the upgrade/rollback sequence is reproducible. Run `npm run test:quotas` for quota validation and `npm run test:quotas:db` for integration, concurrency, and rollback preservation tests.
+
 ## Feedback and issues
 
 Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).

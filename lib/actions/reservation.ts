@@ -11,6 +11,8 @@ import {
 import { listSettingsItems } from "@/lib/actions/settings";
 import { printReservationTicket } from "@/lib/printer/ticket";
 import { getDisplaySettings } from "@/lib/actions/display-settings";
+import { getQuotaAvailability } from "@/lib/actions/quotas";
+import { availabilityMessage } from "@/lib/quotas";
 import {
   resolveOfficeId,
   getOfficeBySlug,
@@ -71,7 +73,7 @@ export type CreateReservationInput = {
 
 export type CreateReservationResult =
   | { success: true; reservation: Reservation; printError?: string }
-  | { success: false; error: string };
+  | { success: false; error: string; code?: "QUOTA_UNAVAILABLE" };
 
 export async function createReservation(
   input: CreateReservationInput
@@ -82,7 +84,6 @@ export async function createReservation(
   }
 
   const supabase = await createClient();
-  const manilaToday = getManilaDateString();
 
   const office = await getOfficeBySlug(input.office_slug);
   if (!office) {
@@ -142,23 +143,8 @@ export async function createReservation(
     }
   }
 
-  const { count, error: countError } = await supabase
-    .from("reservations")
-    .select("*", { count: "exact", head: true })
-    .eq("office_id", officeId)
-    .eq("queue_date", manilaToday)
-    .eq("inquiry_type", input.inquiry_type)
-    .eq("application_type", input.application_type)
-    .in("status", ["waiting", "serving"]);
-
-  if (countError) {
-    return { success: false, error: countError.message };
-  }
-
-  const position = (count ?? 0) + 1;
-  const queue_number = `${inquiryTypeConfig.prefix}${position.toString().padStart(3, "0")}`;
-  const assignedWindow = await pickWindowForNewReservation(activeWindows, officeId);
-
+  // The database assigns a window and ticket number while holding the office
+  // lock, so a stale availability response cannot overbook the last slot.
   const { data, error } = await supabase
     .from("reservations")
     .insert({
@@ -178,18 +164,27 @@ export async function createReservation(
       claim_or_request: office.requires_claim_request ? claimOrRequest : null,
       priority_type: priorityType,
       application_type: input.application_type,
-      queue_number,
-      position,
+      queue_number: "",
+      position: 0,
       status: "waiting",
-      window_id: assignedWindow.id,
-      queue_date: manilaToday,
     })
     .select()
     .single();
 
   if (error) {
+    if (error.message.includes("QUOTA_UNAVAILABLE")) {
+      let message = "No window can accept another reservation right now. Please try again shortly.";
+      try {
+        message = availabilityMessage(await getQuotaAvailability(input.office_slug)) ?? message;
+      } catch { /* Keep the actionable admission error if availability refresh fails. */ }
+      return { success: false, code: "QUOTA_UNAVAILABLE", error: message };
+    }
     return { success: false, error: error.message };
   }
+
+  const assignedWindow = activeWindows.find((window) => window.id === (data as Reservation).window_id)
+    ?? await getWindowById((data as Reservation).window_id!);
+  const windowName = assignedWindow?.name ?? "Assigned window";
 
   revalidatePath(`/${input.office_slug}/reserve`);
   revalidatePath(`/${input.office_slug}/reserve/confirmation`);
@@ -208,8 +203,8 @@ export async function createReservation(
       inquiry_type: input.inquiry_type,
       claim_or_request: office.requires_claim_request ? claimOrRequest : null,
       priority_type: priorityType,
-      window_id: assignedWindow.id,
-      window_name: assignedWindow.name,
+      window_id: (data as Reservation).window_id,
+      window_name: windowName,
       student_id: input.student_id,
       student_name: input.student_name,
     },
@@ -217,28 +212,33 @@ export async function createReservation(
 
   const reservation: Reservation = {
     ...(data as Reservation),
-    window_name: assignedWindow.name,
+    window_name: windowName,
   };
 
+  // Tickets print from the kiosk browser (components/print-ticket.tsx). Server
+  // printing only works when the server is the PC wired to the printer, so it
+  // is opt-in via TICKET_PRINT_MODE=server.
   let printError: string | undefined;
-  try {
-    const printResult = await printReservationTicket({
-      queueNumber: reservation.queue_number,
-      studentName: reservation.student_name,
-      studentId: reservation.student_id ?? "",
-      department: reservation.department,
-      inquiryType: reservation.inquiry_type,
-      claimOrRequest: reservation.claim_or_request ?? "",
-      windowName: assignedWindow.name,
-      position: reservation.position,
-      estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
-      createdAt: new Date(reservation.created_at),
-    });
-    if (!printResult.success) {
-      printError = printResult.error;
+  if (process.env.TICKET_PRINT_MODE === "server") {
+    try {
+      const printResult = await printReservationTicket({
+        queueNumber: reservation.queue_number,
+        studentName: reservation.student_name,
+        studentId: reservation.student_id ?? "",
+        department: reservation.department,
+        inquiryType: reservation.inquiry_type,
+        claimOrRequest: reservation.claim_or_request ?? "",
+        windowName,
+        position: reservation.position,
+        estimatedMinutes: (reservation.position - 1) * MINUTES_PER_SLOT,
+        createdAt: new Date(reservation.created_at),
+      });
+      if (!printResult.success) {
+        printError = printResult.error;
+      }
+    } catch (err) {
+      printError = err instanceof Error ? err.message : "Unknown printer error";
     }
-  } catch (err) {
-    printError = err instanceof Error ? err.message : "Unknown printer error";
   }
 
   return {
@@ -350,6 +350,11 @@ export async function getSkippedQueue(officeId: string) {
 }
 
 export type DisplayData = {
+  recalls?: Array<{
+    window_id: string;
+    nonce: string;
+    payload: { queueNumber?: string; windowName?: string; studentName?: string | null };
+  }>;
   nowServingByWindow: Array<{
     windowId: string;
     windowName: string;
@@ -399,8 +404,13 @@ export async function getDisplayData(officeSlug: string): Promise<DisplayData> {
   const queue = await getActiveQueue(officeId);
   const skippedQueue = await getSkippedQueue(officeId);
   const displaySettings = await getDisplaySettings(officeId);
+  const supabase = await createClient();
+  const { data: recalls, error: recallError } = await supabase.from("window_recalls")
+    .select("window_id, nonce, payload").eq("office_id", officeId);
+  if (recallError) throw recallError;
 
   return {
+    recalls: recalls ?? [],
     nowServingByWindow: windows.map((window) => {
       const current = queue.find(
         (reservation) =>
@@ -592,53 +602,14 @@ export async function setAvailableWindowCount(
   const officeId = session.id;
 
   const supabase = await createClient();
-  const beforeCount = (await getWindows(officeId)).length;
-  let allWindows = await getAllWindows(officeId);
-
-  if (allWindows.length < count) {
-    const inserts = [];
-    for (let i = allWindows.length + 1; i <= count; i += 1) {
-      inserts.push({ name: `Window ${i}`, is_active: true, office_id: officeId });
-    }
-    const { error: insertError } = await supabase
-      .from("windows")
-      .upsert(inserts, { onConflict: "office_id,name" });
-    if (insertError) {
-      return { success: false, error: insertError.message };
-    }
-    allWindows = await getAllWindows(officeId);
-  }
-
-  const ordered = [...allWindows].sort(
-    (a, b) => getWindowSortNumber(a.name) - getWindowSortNumber(b.name)
-  );
-  const activeIds = ordered.slice(0, count).map((window) => window.id);
-  const inactiveIds = ordered.slice(count).map((window) => window.id);
-
-  if (activeIds.length > 0) {
-    const { error: activeError } = await supabase
-      .from("windows")
-      .update({ is_active: true })
-      .in("id", activeIds);
-    if (activeError) {
-      return { success: false, error: activeError.message };
-    }
-  }
-  if (inactiveIds.length > 0) {
-    const { error: inactiveError } = await supabase
-      .from("windows")
-      .update({ is_active: false })
-      .in("id", inactiveIds);
-    if (inactiveError) {
-      return { success: false, error: inactiveError.message };
-    }
-  }
-
-  const { error: rebalanceError } = await supabase.rpc("rebalance_waiting_tickets", {
+  const { data, error } = await supabase.rpc("set_office_window_count", {
     p_office_id: officeId,
+    p_count: count,
   });
-  if (rebalanceError) {
-    return { success: false, error: rebalanceError.message };
+  if (error) {
+    return { success: false, error: error.message.includes("QUOTA_UNAVAILABLE")
+      ? "Remaining windows have insufficient quota capacity. Adjust quotas or finish the queue first."
+      : error.message };
   }
 
   revalidatePath(`/dashboard/${officeSlug}/admin`);
@@ -652,9 +623,9 @@ export async function setAvailableWindowCount(
     metadata: {
       office_id: officeId,
       office_slug: officeSlug,
-      previous_count: beforeCount,
+      previous_count: data.previous_count,
       new_count: count,
-      active_window_ids: activeIds,
+      active_window_ids: data.active_window_ids,
     },
   });
 
@@ -723,45 +694,6 @@ async function dispatchWindow(
   });
 
   return { success: true as const };
-}
-
-async function pickWindowForNewReservation(
-  windows: QueueWindow[],
-  officeId: string
-): Promise<QueueWindow> {
-  const supabase = await createClient();
-  const manilaToday = getManilaDateString();
-  const windowIds = windows.map((window) => window.id);
-  const { data, error } = await supabase
-    .from("reservations")
-    .select("window_id")
-    .eq("office_id", officeId)
-    .eq("queue_date", manilaToday)
-    .in("status", ["waiting", "serving"])
-    .in("window_id", windowIds);
-  if (error) {
-    throw error;
-  }
-
-  const loadByWindow = new Map<string, number>();
-  windows.forEach((window) => loadByWindow.set(window.id, 0));
-  (data ?? []).forEach((row) => {
-    if (!row.window_id) return;
-    loadByWindow.set(row.window_id, (loadByWindow.get(row.window_id) ?? 0) + 1);
-  });
-
-  const ordered = [...windows].sort((a, b) => {
-    const loadDiff = (loadByWindow.get(a.id) ?? 0) - (loadByWindow.get(b.id) ?? 0);
-    if (loadDiff !== 0) return loadDiff;
-    return getWindowSortNumber(a.name) - getWindowSortNumber(b.name);
-  });
-  return ordered[0];
-}
-
-function getWindowSortNumber(name: string): number {
-  const match = name.match(/\d+/);
-  if (!match) return Number.MAX_SAFE_INTEGER;
-  return Number(match[0]);
 }
 
 function getManilaDateString(): string {

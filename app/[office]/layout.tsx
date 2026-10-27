@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getOfficeBySlug } from "@/lib/offices";
+import { KioskModeSync } from "@/components/kiosk-mode-sync";
 
 async function ValidateOffice({
   params,
@@ -14,7 +15,12 @@ async function ValidateOffice({
   if (!found) {
     notFound();
   }
-  return <>{children}</>;
+  return (
+    <>
+      <KioskModeSync />
+      {children}
+    </>
+  );
 }
 
 export default function OfficeLayout({

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { listSettingsItems } from "@/lib/actions/settings";
 import { getDisplaySettings } from "@/lib/actions/display-settings";
 import { SettingsPanel } from "@/components/settings-panel";
-import { getOfficeBySlug } from "@/lib/offices";
+import { getOfficeBySlug, getSessionProfile } from "@/lib/offices";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -23,6 +23,7 @@ async function SettingsContent({
   const office = await getOfficeBySlug(officeSlug);
   if (!office) notFound();
   const officeId = office.id;
+  const profile = await getSessionProfile();
 
   const [
     schoolYears,
@@ -53,6 +54,7 @@ async function SettingsContent({
       <SettingsPanel
         officeSlug={office.slug}
         officeId={office.id}
+        canManageOffice={profile?.role === "super_admin"}
         schoolYears={schoolYears}
         departments={departments}
         inquiryTypes={inquiryTypes}

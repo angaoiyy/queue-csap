@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { getDisplayData, type DisplayData } from "@/lib/actions/reservation";
+import { usePolling } from "@/lib/use-polling";
 import { parseVideoEmbedUrl } from "@/lib/video";
 import { canPlayAudio, speakNowServing, unlockSpeech } from "@/lib/speech";
 import Image from "next/image";
@@ -21,12 +21,6 @@ function formatTimeLabel(time: string) {
   const period = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${period}`;
 }
-
-type RecallPayload = {
-  queueNumber?: string;
-  windowName?: string;
-  studentName?: string | null;
-};
 
 function useClock() {
   const [time, setTime] = useState("");
@@ -67,15 +61,18 @@ type Props = {
   officeLabel: string;
 };
 
-export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
+export function DisplayScreen({ officeSlug, officeLabel }: Props) {
   const [data, setData] = useState<DisplayData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const refreshRef = useRef<() => void>(() => undefined);
+  const seenRecalls = useRef(new Map<string, string>());
+  const recallsReady = useRef(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [audioChecked, setAudioChecked] = useState(false);
   const { time, date, nowMinutes } = useClock();
   const lastServingRef = useRef<Map<string, string>>(new Map());
   const isFirstLoadRef = useRef(true);
   const audioEnabledRef = useRef(false);
-  const audioSettingRef = useRef(false);
 
   // Enable sound with no tap whenever the browser allows it. Otherwise the
   // very first tap/click/key anywhere on the page unlocks it.
@@ -111,82 +108,37 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
     audioEnabledRef.current = audioEnabled;
   }, [audioEnabled]);
 
-  useEffect(() => {
-    audioSettingRef.current = data?.audioEnabled ?? false;
-  }, [data?.audioEnabled]);
-
   const enableAudio = () => {
     unlockSpeech();
     setAudioEnabled(true);
   };
 
+  const loadDisplay = async () => {
+    if (document.visibilityState === "hidden" || !navigator.onLine) return;
+    try {
+      const next = await getDisplayData(officeSlug);
+      setData(next);
+      setLoadError(null);
+      for (const recall of next.recalls ?? []) {
+        const previous = seenRecalls.current.get(recall.window_id);
+        if (recallsReady.current && previous !== recall.nonce && audioEnabledRef.current && next.audioEnabled) {
+          const payload = recall.payload;
+          if (payload.queueNumber && payload.windowName) speakNowServing(payload.queueNumber, payload.windowName, payload.studentName ?? undefined);
+        }
+        seenRecalls.current.set(recall.window_id, recall.nonce);
+      }
+      recallsReady.current = true;
+    } catch {
+      setLoadError("Could not refresh the queue. Please try again.");
+    }
+  };
+  refreshRef.current = () => { void loadDisplay(); };
+  usePolling(loadDisplay, 5000, true, false);
   useEffect(() => {
-    const load = async () => {
-      const d = await getDisplayData(officeSlug);
-      setData(d);
-    };
-    load();
-  }, [officeSlug]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`reservations-changes-${officeSlug}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "reservations",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          const d = await getDisplayData(officeSlug);
-          setData(d);
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "display_settings",
-          filter: `office_id=eq.${officeId}`,
-        },
-        async () => {
-          const d = await getDisplayData(officeSlug);
-          setData(d);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [officeSlug, officeId]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`queue-recall-${officeSlug}`)
-      .on(
-        "broadcast",
-        { event: "recall" },
-        ({ payload }: { payload: RecallPayload }) => {
-          if (!audioEnabledRef.current || !audioSettingRef.current) return;
-          if (!payload?.queueNumber || !payload?.windowName) return;
-          speakNowServing(
-            payload.queueNumber,
-            payload.windowName,
-            payload.studentName ?? undefined,
-          );
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    seenRecalls.current.clear();
+    recallsReady.current = false;
+    void loadDisplay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeSlug]);
 
   useEffect(() => {
@@ -217,7 +169,8 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
   if (!data) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[hsl(356,45%,15%)]">
-        <p className="text-xl text-white/80">Loading...</p>
+        <div className="space-y-3 text-center text-white/80"><p className="text-xl">{loadError ?? "Loading..."}</p>
+          {loadError && <button type="button" className="underline" onClick={() => refreshRef.current()}>Refresh</button>}</div>
       </div>
     );
   }
@@ -291,6 +244,7 @@ export function DisplayScreen({ officeSlug, officeId, officeLabel }: Props) {
           <p className="hidden text-xs text-white/90 sm:block">{date}</p>
         </div>
       </header>
+      {loadError && <p role="status" className="px-4 py-2 text-sm text-white/80">{loadError} <button type="button" className="underline" onClick={() => refreshRef.current()}>Refresh</button></p>}
 
       {/* Main content */}
       <main className="relative flex flex-1 flex-col gap-3 px-3 py-3 sm:px-6 lg:min-h-0 lg:px-10 lg:py-4">

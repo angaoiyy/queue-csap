@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { User } from "lucide-react";
+import { releaseWindow } from "@/lib/actions/window-assignment";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +34,7 @@ export function UserNavDropdown({
 
   const logout = async () => {
     const supabase = createClient();
+    await releaseWindow().catch(() => undefined);
     await supabase.auth.signOut();
     router.push("/auth/login");
   };
