@@ -26,6 +26,7 @@ import {
   type CreateReservationInput,
 } from "@/lib/actions/reservation";
 import type { SettingsItem } from "@/lib/actions/settings";
+import { STUDENT_ID_PATTERN, STUDENT_ID_ERROR } from "@/lib/student-id";
 import {
   PRIORITY_TYPES,
   MINUTES_PER_SLOT,
@@ -110,6 +111,7 @@ export function ReservationForm({
   const handleLookupKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
+    if (!e.currentTarget.reportValidity()) return;
     runLookup(e.currentTarget.value);
   };
 
@@ -180,6 +182,10 @@ export function ReservationForm({
             <Input
               id="student_id"
               placeholder="2024-00123"
+              pattern={STUDENT_ID_PATTERN}
+              maxLength={10}
+              title={STUDENT_ID_ERROR}
+              aria-describedby="student_id_hint"
               required
               value={formData.student_id}
               onChange={(e) =>
@@ -187,8 +193,10 @@ export function ReservationForm({
               }
               onKeyDown={handleLookupKeyDown}
             />
-            <p className="text-xs text-muted-foreground">
-              Press Enter to autofill from a previous reservation
+            <p id="student_id_hint" className="text-xs text-muted-foreground">
+              Format: YYYY-NNNNN (e.g. 2024-00123). {isLookingUp
+                ? "Looking up previous reservation..."
+                : "Press Enter to autofill from a previous reservation."}
             </p>
           </div>
 
