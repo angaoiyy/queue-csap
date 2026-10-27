@@ -4,6 +4,7 @@ import { autoTable } from "jspdf-autotable";
 export type ActivityLogPdfRow = {
   createdAt: string;
   action: string;
+  name: string;
   window: string;
   details: string;
 };
@@ -196,10 +197,11 @@ export function buildActivityLogsPdf(input: ActivityLogPdfInput): jsPDF {
       headStyles: { fillColor: HEAD_FILL, textColor: 255, fontStyle: "bold" },
       columnStyles: {
         0: { cellWidth: 22 },
-        1: { cellWidth: 42 },
-        2: { cellWidth: 32 },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 34 },
+        3: { cellWidth: 24 },
       },
-      head: [["Time", "Action", "Window", "Details"]],
+      head: [["Time", "Action", "Name", "Window", "Details"]],
       body: group.map((row) =>
         [
           new Date(row.createdAt).toLocaleTimeString("en-PH", {
@@ -207,6 +209,7 @@ export function buildActivityLogsPdf(input: ActivityLogPdfInput): jsPDF {
             minute: "2-digit",
           }),
           row.action,
+          row.name,
           row.window,
           row.details,
         ].map(pdfText),
